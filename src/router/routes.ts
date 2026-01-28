@@ -7,7 +7,12 @@ import {
   Settings as SettingsIcon,
   Home as HomeIcon,
   Pdf as PdfIcon,
-  HtmlReference as HtmlIcon,
+  Compare,
+  Locked,
+  Terminal,
+  Password,
+  ImageReference,
+  FitToScreen,
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -41,13 +46,42 @@ export const routes = [
         path: 'hash',
         name: 'text-hash',
         component: () => import('@/views/text/HashTool.vue'),
-        meta: { title: '哈希计算' },
+        meta: { title: '哈希计算', icon: renderIcon(Locked) },
       },
       {
         path: 'json',
         name: 'text-json',
         component: () => import('@/views/text/JsonTool.vue'),
-        meta: { title: 'JSON 格式化' },
+        meta: { title: 'JSON 格式化', icon: renderIcon(Terminal) },
+      },
+      {
+        path: 'diff',
+        name: 'text-diff',
+        component: () => import('@/views/text/DiffTool.vue'),
+        meta: { title: '文本对比', icon: renderIcon(Compare) },
+      },
+      {
+        path: 'password',
+        name: 'text-password',
+        component: () => import('@/views/text/PasswordGen.vue'),
+        meta: { title: '密码生成', icon: renderIcon(Password) },
+      },
+    ],
+  },
+  {
+    path: '/image',
+    name: 'image',
+    component: { render: () => h(RouterView) },
+    meta: {
+      title: '图片工具',
+      icon: renderIcon(ImageReference),
+    },
+    children: [
+      {
+        path: 'compress',
+        name: 'image-compress',
+        component: () => import('@/views/image/CompressTool.vue'),
+        meta: { title: '图片压缩', icon: renderIcon(FitToScreen) },
       },
     ],
   },
@@ -56,21 +90,15 @@ export const routes = [
     name: 'doc',
     component: { render: () => h(RouterView) },
     meta: {
-      title: '文档转换',
+      title: '文档处理',
       icon: renderIcon(DocIcon),
     },
     children: [
       {
-        path: 'pdf-word',
-        name: 'pdf-word',
-        component: () => import('@/views/text/HashTool.vue'), // 暂时占位
-        meta: { title: 'PDF 转 Word', icon: renderIcon(PdfIcon) },
-      },
-      {
-        path: 'html-pdf',
-        name: 'html-pdf',
-        component: () => import('@/views/text/HashTool.vue'), // 暂时占位
-        meta: { title: 'HTML 转 PDF', icon: renderIcon(HtmlIcon) },
+        path: 'pdf-protect',
+        name: 'doc-protect',
+        component: () => import('@/views/doc/PdfProtect.vue'),
+        meta: { title: 'PDF 加解密', icon: renderIcon(PdfIcon) },
       },
     ],
   },
