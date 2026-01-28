@@ -64,7 +64,7 @@ const handleUpdateExpandedKeys = (keys: string[]) => {
       <div class="w-8 h-8 bg-cyan-500/20 rounded-lg flex items-center justify-center mr-3">
         <span class="text-cyan-400 font-bold">K</span>
       </div>
-      <span class="text-lg font-bold tracking-wider text-slate-100">KRATE</span>
+      <span class="text-lg font-bold tracking-wider text-slate-100">Krate</span>
     </div>
 
     <div class="flex-1 py-4 overflow-y-auto custom-scrollbar">
