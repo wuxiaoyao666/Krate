@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { NConfigProvider, NGlobalStyle, NLayout, NLayoutSider, NLayoutContent, darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import {
+  NConfigProvider,
+  NGlobalStyle,
+  NLayout,
+  NLayoutSider,
+  NLayoutContent,
+  darkTheme,
+  NMessageProvider,
+  type GlobalThemeOverrides,
+} from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
 
 const themeOverrides: GlobalThemeOverrides = {
@@ -21,50 +30,54 @@ const themeOverrides: GlobalThemeOverrides = {
   Layout: {
     siderColor: '#0F172A', // 侧边栏背景
     color: '#1E293B', // 内容区背景
-  }
+  },
 }
 </script>
 
 <template>
   <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-global-style />
+    <n-message-provider>
+      <n-layout has-sider class="h-screen w-screen bg-[#0F172A]">
+        <n-layout-sider
+          bordered
+          collapse-mode="width"
+          :collapsed-width="64"
+          :width="240"
+          class="border-r border-slate-800"
+        >
+          <Sidebar />
+        </n-layout-sider>
 
-    <n-layout has-sider class="h-screen w-screen bg-[#0F172A]">
-      <n-layout-sider
-        bordered
-        collapse-mode="width"
-        :collapsed-width="64"
-        :width="240"
-        class="border-r border-slate-800"
-      >
-        <Sidebar />
-      </n-layout-sider>
+        <n-layout-content content-style="padding: 0;">
+          <div class="h-full p-2 bg-[#0F172A]">
+            <div
+              class="h-full w-full bg-[#1E293B] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative border border-slate-700/30"
+            >
+              <div data-tauri-drag-region class="h-8 w-full absolute top-0 left-0 z-50"></div>
 
-      <n-layout-content content-style="padding: 0;">
-        <div class="h-full p-2 bg-[#0F172A]">
-          <div class="h-full w-full bg-[#1E293B] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative border border-slate-700/30">
-
-            <div data-tauri-drag-region class="h-8 w-full absolute top-0 left-0 z-50"></div>
-
-            <div class="flex-1 p-8 overflow-y-auto">
-              <router-view v-slot="{ Component }">
-                <transition name="fade" mode="out-in">
-                  <component :is="Component" />
-                </transition>
-              </router-view>
+              <div class="flex-1 p-8 overflow-y-auto">
+                <router-view v-slot="{ Component }">
+                  <transition name="fade" mode="out-in">
+                    <component :is="Component" />
+                  </transition>
+                </router-view>
+              </div>
             </div>
-
           </div>
-        </div>
-      </n-layout-content>
-    </n-layout>
+        </n-layout-content>
+      </n-layout>
+    </n-message-provider>
   </n-config-provider>
 </template>
 
 <style>
 /* 页面切换动画 */
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 .fade-enter-from {
   opacity: 0;

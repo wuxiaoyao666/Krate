@@ -1,73 +1,60 @@
 <script setup lang="ts">
-import { h, ref } from 'vue'
-import { NMenu, NIcon } from 'naive-ui'
-import { useRouter } from 'vue-router'
-import type { MenuOption } from 'naive-ui'
-import {
-  Code as TextIcon,
-  Document as DocIcon,
-  Settings as SettingsIcon,
-  Home as HomeIcon,
-  Pdf as PdfIcon,
-  HtmlReference as HtmlIcon
-} from '@vicons/carbon'
+import { ref, watch, computed } from 'vue'
+import { NMenu } from 'naive-ui'
+import { useRouter, useRoute } from 'vue-router'
+import { routes } from '@/router/routes.ts'
 
 const router = useRouter()
-const activeKey = ref<string | null>('home')
+const route = useRoute()
 
-// 渲染图标的辅助函数
-function renderIcon(icon: any) {
-  return () => h(NIcon, null, { default: () => h(icon) })
+// 1. 动态生成菜单选项
+// 递归函数：把 Vue Router 的 routes 转换成 Naive UI 的 menuOptions
+const transformRoutesToMenu = (routes: any[]) => {
+  return routes
+    .filter((item) => !item.meta?.hidden) // 过滤掉不需要显示的路由
+    .map((item) => {
+      const menuItem: any = {
+        label: item.meta?.title || item.name,
+        key: item.name,
+        icon: item.meta?.icon,
+      }
+
+      // 如果有子路由，递归处理
+      if (item.children && item.children.length > 0) {
+        menuItem.children = transformRoutesToMenu(item.children)
+      }
+      return menuItem
+    })
 }
 
-// 核心：菜单配置
-const menuOptions: MenuOption[] = [
-  {
-    label: '主页',
-    key: 'home',
-    icon: renderIcon(HomeIcon)
-  },
-  {
-    label: '文本工具',
-    key: 'text',
-    icon: renderIcon(TextIcon),
-    children: [
-      { label: '哈希计算', key: 'text-hash' }, // 对应路由 name
-      { label: 'JSON 格式化', key: 'text-json', disabled: true } // 还没做可以先 disable
-    ]
-  },
-  {
-    label: '文档转换', // 第一级菜单
-    key: 'doc',
-    icon: renderIcon(DocIcon),
-    children: [
-      {
-        label: 'PDF 转 Word', // 第二级菜单
-        key: 'pdf-word',
-        icon: renderIcon(PdfIcon)
-      },
-      {
-        label: 'HTML 转 PDF',
-        key: 'html-pdf',
-        icon: renderIcon(HtmlIcon)
-      }
-    ]
-  },
-  {
-    type: 'divider', // 分割线，增加层次感
-    key: 'd1'
-  },
-  {
-    label: '系统设置',
-    key: 'settings',
-    icon: renderIcon(SettingsIcon)
-  }
-]
+const menuOptions = transformRoutesToMenu(routes)
 
-// 处理点击
+// 选中项：直接计算属性绑定当前路由 name
+const activeKey = computed(() => route.name as string)
+
+// 展开项：控制哪些父菜单是打开的
+const expandedKeys = ref<string[]>([])
+
+// 监听路由变化，自动展开父级菜单
+// route.matched 包含了当前路由匹配到的所有层级（父 -> 子）
+watch(
+  () => route.matched,
+  (matched) => {
+    // 把匹配到的所有路由的 name 取出来，作为展开项
+    // 例如访问 /text/hash，matched 是 ['text', 'text-hash']
+    // 我们把它们都丢进 expandedKeys，菜单自然就展开了
+    expandedKeys.value = matched.map((m) => m.name as string)
+  },
+  { immediate: true },
+) // immediate: true 保证刷新页面时立即执行一次
+
+// 处理菜单点击
 const handleUpdateValue = (key: string) => {
-  activeKey.value = key
   router.push({ name: key })
+}
+
+const handleUpdateExpandedKeys = (keys: string[]) => {
+  expandedKeys.value = keys
 }
 </script>
 
@@ -84,6 +71,8 @@ const handleUpdateValue = (key: string) => {
       <n-menu
         :options="menuOptions"
         :value="activeKey"
+        :expanded-keys="expandedKeys"
+        @update:expanded-keys="handleUpdateExpandedKeys"
         @update:value="handleUpdateValue"
         :indent="24"
       />
@@ -96,8 +85,7 @@ const handleUpdateValue = (key: string) => {
 </template>
 
 <style scoped>
-/* 隐藏侧边栏滚动条但保留功能 */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 0px;
+  width: 0;
 }
 </style>
