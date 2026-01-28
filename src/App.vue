@@ -1,160 +1,78 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { NConfigProvider, NGlobalStyle, NLayout, NLayoutSider, NLayoutContent, darkTheme, type GlobalThemeOverrides } from 'naive-ui'
+import Sidebar from './components/Sidebar.vue'
 
-const greetMsg = ref("");
-const name = ref("");
-
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+// 定制深色主题，让它更符合 Tailwind 的 Slate 色系
+const themeOverrides: GlobalThemeOverrides = {
+  common: {
+    primaryColor: '#22D3EE', // Cyan-400，你的主题色
+    primaryColorHover: '#67E8F9',
+    primaryColorPressed: '#06B6D4',
+  },
+  Menu: {
+    itemColorActive: 'rgba(34, 211, 238, 0.1)', // 选中项背景极淡的青色
+    itemTextColorActive: '#22D3EE', // 选中项文字颜色
+    itemIconColorActive: '#22D3EE',
+    itemTextColor: '#94A3B8', // 默认文字 Slate-400
+    itemIconColor: '#94A3B8',
+    itemTextColorHover: '#F1F5F9', // 悬停文字变白
+    itemIconColorHover: '#F1F5F9',
+    borderRadius: '8px', // 菜单项圆角
+  },
+  Layout: {
+    siderColor: '#0F172A', // 侧边栏背景
+    color: '#1E293B', // 内容区背景
+  }
 }
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
+    <n-global-style />
 
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+    <n-layout has-sider class="h-screen w-screen bg-[#0F172A]">
+      <n-layout-sider
+        bordered
+        collapse-mode="width"
+        :collapsed-width="64"
+        :width="240"
+        class="border-r border-slate-800"
+      >
+        <Sidebar />
+      </n-layout-sider>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+      <n-layout-content content-style="padding: 0;">
+        <div class="h-full p-2 bg-[#0F172A]">
+          <div class="h-full w-full bg-[#1E293B] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative border border-slate-700/30">
+
+            <div data-tauri-drag-region class="h-8 w-full absolute top-0 left-0 z-50"></div>
+
+            <div class="flex-1 p-8 overflow-y-auto">
+              <router-view v-slot="{ Component }">
+                <transition name="fade" mode="out-in">
+                  <component :is="Component" />
+                </transition>
+              </router-view>
+            </div>
+
+          </div>
+        </div>
+      </n-layout-content>
+    </n-layout>
+  </n-config-provider>
 </template>
 
-<style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
 <style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+/* 页面切换动画 */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+.fade-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
 }
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
 }
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>
