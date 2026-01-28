@@ -1,8 +1,5 @@
 @import "tailwindcss";
 
-/* 可选：全局字体优化
-  这会让你的 Krate 在 Windows 上看起来像原生应用，而不是网页
-*/
 :root {
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     user-select: none; /* 禁止用户像选网页文字一样选中文本，更像 App */

@@ -2,10 +2,9 @@
 import { NConfigProvider, NGlobalStyle, NLayout, NLayoutSider, NLayoutContent, darkTheme, type GlobalThemeOverrides } from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
 
-// 定制深色主题，让它更符合 Tailwind 的 Slate 色系
 const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#22D3EE', // Cyan-400，你的主题色
+    primaryColor: '#22D3EE',
     primaryColorHover: '#67E8F9',
     primaryColorPressed: '#06B6D4',
   },

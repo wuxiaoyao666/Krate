@@ -4,7 +4,7 @@ import { NMenu, NIcon } from 'naive-ui'
 import { useRouter } from 'vue-router'
 import type { MenuOption } from 'naive-ui'
 import {
-  code as TextIcon,
+  Code as TextIcon,
   Document as DocIcon,
   Settings as SettingsIcon,
   Home as HomeIcon,
