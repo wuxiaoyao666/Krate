@@ -12,7 +12,7 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen, Scale
+  FitToScreen, Scale, Code
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -65,6 +65,12 @@ export const routes = [
         name: 'text-password',
         component: () => import('@/views/text/PasswordGen.vue'),
         meta: { title: '密码生成', icon: renderIcon(Password) },
+      },
+      {
+        path: 'jwt',
+        name: 'text-jwt',
+        component: () => import('@/views/text/JwtParser.vue'),
+        meta: { title: 'JWT 解析器', icon: renderIcon(Code) },
       },
     ],
   },
