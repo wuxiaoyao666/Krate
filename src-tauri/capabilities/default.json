@@ -19,6 +19,9 @@
           "sidecar": true
         }
       ]
-    }
+    },
+    "fs:allow-app-read-recursive",
+    "fs:allow-app-write-recursive",
+    "clipboard-manager:allow-write-image"
   ]
 }

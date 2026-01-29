@@ -12,7 +12,7 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen, Scale, Code
+  FitToScreen, Scale, Code, QrCode
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -97,6 +97,12 @@ export const routes = [
           title: '尺寸调整',
           icon: renderIcon(Scale)
         },
+      },
+      {
+        path: 'qrcode',
+        name: 'image-qrcode',
+        component: () => import('@/views/image/QrGenerator.vue'),
+        meta: { title: '二维码生成', icon: renderIcon(QrCode) },
       },
     ],
   },

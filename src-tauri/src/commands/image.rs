@@ -1,7 +1,12 @@
 use image::GenericImageView;
 
 #[tauri::command]
-pub fn resize_image(input_path: String, output_path: String, width: u32, height: u32) -> Result<(), String> {
+pub fn resize_image(
+    input_path: String,
+    output_path: String,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
     // 打开图片
     let img = image::open(&input_path).map_err(|e| format!("打开图片失败: {}", e))?;
 
@@ -10,7 +15,9 @@ pub fn resize_image(input_path: String, output_path: String, width: u32, height:
     let new_img = img.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
 
     // 保存图片
-    new_img.save(&output_path).map_err(|e| format!("保存失败: {}", e))?;
+    new_img
+        .save(&output_path)
+        .map_err(|e| format!("保存失败: {}", e))?;
 
     Ok(())
 }
