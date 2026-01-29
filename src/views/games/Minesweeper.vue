@@ -167,7 +167,7 @@ const reveal = (r: number, c: number) => {
   checkWin()
 }
 
-// 🔥 右键逻辑：插旗 + 和弦
+// 右键逻辑：插旗 + 和弦
 const handleRightClick = (e: Event, r: number, c: number) => {
   e.preventDefault()
   if (gameState.value === 'won' || gameState.value === 'lost') return
@@ -187,7 +187,7 @@ const handleRightClick = (e: Event, r: number, c: number) => {
   }
 }
 
-// 🔥 和弦逻辑：检查周围旗子数量
+// 和弦逻辑：检查周围旗子数量
 const triggerChord = (cell: Cell) => {
   const neighbors = getNeighbors(cell.row, cell.col)
   const flagCount = neighbors.filter(n => n.isFlagged).length
@@ -363,7 +363,7 @@ initGame()
                     ? (cell.isExploded ? 'bg-red-600' : 'bg-[#1f2937]')
                     : 'bg-[#e5e7eb]')
 
-                // 未翻开 (增加闪烁判断)
+                // 未翻开 增加闪烁判断
                 : (cell.isFlashing
                     ? 'bg-white/80'  // ✨ 强烈的闪烁反馈
                     : 'bg-[#4b5563] hover:bg-[#586375] shadow-[inset_1px_1px_0_rgba(255,255,255,0.15),inset_-1px_-1px_0_rgba(0,0,0,0.3)] active:shadow-none active:bg-[#e5e7eb]')
