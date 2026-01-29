@@ -1,6 +1,6 @@
 [package]
 name = "Krate"
-version = "0.1.0"
+version = "1.0.0"
 description = "Krate 森哥工具箱"
 authors = ["xiaoyao"]
 edition = "2021"
