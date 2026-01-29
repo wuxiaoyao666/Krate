@@ -23,8 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-extension/.venv
-extension/build
-extension/dist
-extension/*.spec
+krate_extension/.venv
+krate_extension/build
+krate_extension/dist
+krate_extension/*.spec
 src-tauri/bin/*

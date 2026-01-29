@@ -1,7 +1,18 @@
-# Tauri + Vue + TypeScript
+# 1. 运行项目
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+1. 在 **krate_extension** 下安装 Python 虚拟环境
+2. 执行
 
-## Recommended IDE Setup
+```shell
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+3. 也可以升级已有的依赖
+
+```shell
+pip install --upgrade -r requirements.txt
+```
+
+4. 根据不同操作系统执行 cmd 下面的打包命令
+
+5. 将产物放到 **src-tauri/bin** 下
