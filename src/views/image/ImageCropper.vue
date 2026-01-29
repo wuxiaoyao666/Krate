@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, onUnmounted, watch, nextTick } from 'vue'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
@@ -27,6 +27,8 @@ const config = reactive({
   fixedBox: false,
   fixed: true,
 })
+
+const isSyncingFromCropper = ref(false)
 
 const selectFile = async () => {
   try {
@@ -129,6 +131,34 @@ const setRatio = (w: number, h: number) => {
     if(cropperRef.value) cropperRef.value.refresh()
   }, 10)
 }
+
+const syncConfigFromCropper = () => {
+  if (!cropperRef.value) return
+  const axis = cropperRef.value.getCropAxis()
+  if (!axis) return
+  const w = Math.round(axis.x2 - axis.x1)
+  const h = Math.round(axis.y2 - axis.y1)
+  if (w <= 0 || h <= 0) return
+  if (w === config.width && h === config.height) return
+  isSyncingFromCropper.value = true
+  config.width = w
+  config.height = h
+  nextTick(() => {
+    isSyncingFromCropper.value = false
+  })
+}
+
+watch(
+  () => [config.width, config.height],
+  () => {
+    if (isSyncingFromCropper.value) return
+    if (!cropperRef.value) return
+    nextTick(() => {
+      cropperRef.value.refresh()
+    })
+  }
+)
+
 </script>
 
 <template>
@@ -171,6 +201,8 @@ const setRatio = (w: number, h: number) => {
           :centerBox="false"
           :full="true"
           mode="contain"
+          @realTime="syncConfigFromCropper"
+          @cropMoving="syncConfigFromCropper"
         ></vue-cropper>
       </div>
 
