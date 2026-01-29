@@ -1,0 +1,1 @@
+pyinstaller --noconsole --onefile --add-data "modules;modules" --collect-all pikepdf --name krate_extension main.py
