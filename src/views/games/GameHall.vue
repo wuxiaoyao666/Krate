@@ -13,8 +13,8 @@ const games = [
     icon: Flash,
     color: 'text-red-400',
     route: '/game/minesweeper',
-    width: 600,
-    height: 700
+    width: 1200,
+    height: 900
   },
   {
     id: 'fishing',
