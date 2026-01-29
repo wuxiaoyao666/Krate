@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NInput, NTag, NIcon, useMessage } from 'naive-ui'
+import { NInput, NTag, NIcon } from 'naive-ui'
 import { CheckmarkFilled, ErrorFilled, Time, Code } from '@vicons/carbon'
 
 const token = ref('')
