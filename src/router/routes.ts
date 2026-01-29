@@ -12,7 +12,7 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen, Scale, Code, QrCode, Crop
+  FitToScreen, Scale, Code, QrCode, Crop, GameConsole
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -130,6 +130,15 @@ export const routes = [
     ],
   },
   {
+    path: '/games',
+    name: 'games',
+    component: () => import('@/views/games/GameHall.vue'),
+    meta: {
+      title: '游戏',
+      icon: renderIcon(GameConsole),
+    },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/text/HashTool.vue'), // 暂时占位
@@ -137,5 +146,17 @@ export const routes = [
       title: '系统设置',
       icon: renderIcon(SettingsIcon),
     },
+  },
+  {
+    path: '/game/minesweeper',
+    name: 'game-minesweeper',
+    component: () => import('@/views/games/Minesweeper.vue'),
+    meta: { title: '扫雷',hidden: true,standalone: true }
+  },
+  {
+    path: '/game/fishing',
+    name: 'game-fishing',
+    component: () => import('@/views/games/Fishing.vue'),
+    meta: { title: '大鱼吃小鱼',hidden: true,standalone: true }
   },
 ]

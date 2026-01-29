@@ -7,15 +7,19 @@ import {
   NLayoutContent,
   darkTheme,
   NMessageProvider,
-  type GlobalThemeOverrides,
+  type GlobalThemeOverrides
 } from 'naive-ui'
 import Sidebar from './components/Sidebar.vue'
+import { useRoute } from 'vue-router'
+
+// 获取当前路由
+const route = useRoute()
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {
     primaryColor: '#22D3EE',
     primaryColorHover: '#67E8F9',
-    primaryColorPressed: '#06B6D4',
+    primaryColorPressed: '#06B6D4'
   },
   Menu: {
     itemColorActive: 'rgba(34, 211, 238, 0.1)', // 选中项背景极淡的青色
@@ -25,12 +29,12 @@ const themeOverrides: GlobalThemeOverrides = {
     itemIconColor: '#94A3B8',
     itemTextColorHover: '#F1F5F9', // 悬停文字变白
     itemIconColorHover: '#F1F5F9',
-    borderRadius: '8px', // 菜单项圆角
+    borderRadius: '8px' // 菜单项圆角
   },
   Layout: {
     siderColor: '#0F172A', // 侧边栏背景
-    color: '#1E293B', // 内容区背景
-  },
+    color: '#1E293B' // 内容区背景
+  }
 }
 </script>
 
@@ -38,7 +42,13 @@ const themeOverrides: GlobalThemeOverrides = {
   <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-global-style />
     <n-message-provider>
-      <n-layout has-sider class="h-screen w-screen bg-[#0F172A]">
+
+      <!--   独立窗口运行   -->
+      <div v-if="route.meta.standalone" class="h-screen w-screen bg-[#0F172A] overflow-hidden">
+        <router-view />
+      </div>
+
+      <n-layout v-else has-sider class="h-screen w-screen bg-[#0F172A]">
         <n-layout-sider
           bordered
           collapse-mode="width"
@@ -67,6 +77,7 @@ const themeOverrides: GlobalThemeOverrides = {
           </div>
         </n-layout-content>
       </n-layout>
+
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -75,14 +86,15 @@ const themeOverrides: GlobalThemeOverrides = {
 /* 页面切换动画 */
 .fade-enter-active,
 .fade-leave-active {
-  transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+  transition: opacity 0.2s ease,
+  transform 0.2s ease;
 }
+
 .fade-enter-from {
   opacity: 0;
   transform: translateY(10px);
 }
+
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-10px);
