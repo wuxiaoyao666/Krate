@@ -1,0 +1,1 @@
+echo '{"module": "pdf", "operation": "encrypt", "input_path": "/Users/wuyusen/Desktop/test.pdf", "output_path": "/Users/wuyusen/Desktop/test_encrypted.pdf", "password": "123"}' | ./krate_extension-aarch64-apple-darwin

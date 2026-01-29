@@ -9,8 +9,6 @@ sys.stderr.reconfigure(encoding='utf-8')
 
 
 def main():
-    # 🔥 关键修复：将运行时的临时目录加入 sys.path
-    # 这样才能找到打包进去的 modules 文件夹
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
     else:
