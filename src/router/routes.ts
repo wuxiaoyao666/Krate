@@ -12,7 +12,7 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen,
+  FitToScreen, Scale
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -82,6 +82,15 @@ export const routes = [
         name: 'image-compress',
         component: () => import('@/views/image/CompressTool.vue'),
         meta: { title: '图片压缩', icon: renderIcon(FitToScreen) },
+      },
+      {
+        path: 'resize',
+        name: 'image-resize',
+        component: () => import('@/views/image/ImageResizer.vue'),
+        meta: {
+          title: '尺寸调整',
+          icon: renderIcon(Scale)
+        },
       },
     ],
   },
