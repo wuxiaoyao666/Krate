@@ -27,3 +27,4 @@ extension/.venv
 extension/build
 extension/dist
 extension/*.spec
+src-tauri/bin/*
