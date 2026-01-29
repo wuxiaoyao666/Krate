@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { NGrid, NGi, NCard, NButton, NIcon, useMessage } from 'naive-ui'
-import { Flash, Fish, PlayFilled } from '@vicons/carbon'
+import { Flash, Fish, PlayFilled, TableSplit } from '@vicons/carbon'
 
 const message = useMessage()
 
@@ -14,18 +14,18 @@ const games = [
     color: 'text-red-400',
     route: '/game/minesweeper',
     width: 1200,
-    height: 900
+    height: 900,
   },
   {
-    id: 'fishing',
-    title: '大鱼吃小鱼',
-    desc: 'Canvas 物理引擎体验，吞噬弱小',
-    icon: Fish,
-    color: 'text-cyan-400',
-    route: '/game/fishing',
-    width: 1024,
-    height: 768
-  }
+    id: '2048',
+    title: '2048',
+    desc: '数字合成的艺术，根本停不下来',
+    icon: TableSplit,
+    color: 'text-orange-400',
+    route: '/game/2048',
+    width: 500,
+    height: 700,
+  },
 ]
 
 const openGameWindow = async (game: any) => {
@@ -45,7 +45,7 @@ const openGameWindow = async (game: any) => {
     width: game.width,
     height: game.height,
     resizable: false,
-    center: true
+    center: true,
   })
 
   webview.once('tauri://error', (e) => {
@@ -63,7 +63,9 @@ const openGameWindow = async (game: any) => {
 
     <n-grid x-gap="24" y-gap="24" cols="1 s:2 m:3" responsive="screen">
       <n-gi v-for="game in games" :key="game.id">
-        <n-card class="bg-[#1E293B] border-slate-700 hover:-translate-y-1 transition-all duration-300">
+        <n-card
+          class="bg-[#1E293B] border-slate-700 hover:-translate-y-1 transition-all duration-300"
+        >
           <div class="flex flex-col gap-4">
             <div class="flex items-center gap-3">
               <n-icon :size="32" :component="game.icon" :class="game.color" />

@@ -12,7 +12,13 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen, Scale, Code, QrCode, Crop, GameConsole
+  FitToScreen,
+  Scale,
+  Code,
+  QrCode,
+  Crop,
+  GameConsole,
+  TableSplit,
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -101,7 +107,7 @@ export const routes = [
         component: () => import('@/views/image/ImageResizer.vue'),
         meta: {
           title: '尺寸调整',
-          icon: renderIcon(Scale)
+          icon: renderIcon(Scale),
         },
       },
       {
@@ -151,12 +157,17 @@ export const routes = [
     path: '/game/minesweeper',
     name: 'game-minesweeper',
     component: () => import('@/views/games/Minesweeper.vue'),
-    meta: { title: '扫雷',hidden: true,standalone: true }
+    meta: { title: '扫雷', hidden: true, standalone: true },
   },
   {
-    path: '/game/fishing',
-    name: 'game-fishing',
-    component: () => import('@/views/games/Fishing.vue'),
-    meta: { title: '大鱼吃小鱼',hidden: true,standalone: true }
+    path: '/game/2048',
+    name: 'game-2048',
+    component: () => import('@/views/games/Game2048.vue'),
+    meta: {
+      title: '2048',
+      icon: renderIcon(TableSplit),
+      hidden: true,
+      standalone: true, // 独立窗口模式
+    },
   },
 ]
