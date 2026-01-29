@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import 'vue-cropper/dist/index.css'
 import { VueCropper } from 'vue-cropper'
 
@@ -28,8 +28,6 @@ const config = reactive({
   fixed: true,
 })
 
-const isSyncingFromCropper = ref(false)
-
 const selectFile = async () => {
   try {
     const selected = await open({
@@ -37,7 +35,7 @@ const selectFile = async () => {
       filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
     })
 
-    if (selected && typeof selected === 'string') {
+    if (selected) {
       rawPath.value = selected
       fileName.value = selected.split(/[\\/]/).pop() || 'image'
 
@@ -48,8 +46,6 @@ const selectFile = async () => {
       if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
       imageUrl.value = url
 
-      // 2. 🔥 关键：调用 Rust 获取图片的“绝对真实尺寸”
-      // 这一步是为了后面计算缩放比例做准备
       try {
         const [w, h] = await invoke<[number, number]>('get_image_info', { path: selected })
         realSize.w = w
@@ -72,8 +68,6 @@ onUnmounted(() => {
 const handleSave = async () => {
   if (!cropperRef.value) return
 
-  // 1. ✅ 修正点：getCropAxis 是同步方法，直接获取返回值
-  // 不要传 callback，也不要 await (因为它不是 Promise)
   const axis = cropperRef.value.getCropAxis()
 
   // 打印看看结构 (通常包含 x1, y1, x2, y2)
@@ -131,34 +125,6 @@ const setRatio = (w: number, h: number) => {
     if(cropperRef.value) cropperRef.value.refresh()
   }, 10)
 }
-
-const syncConfigFromCropper = () => {
-  if (!cropperRef.value) return
-  const axis = cropperRef.value.getCropAxis()
-  if (!axis) return
-  const w = Math.round(axis.x2 - axis.x1)
-  const h = Math.round(axis.y2 - axis.y1)
-  if (w <= 0 || h <= 0) return
-  if (w === config.width && h === config.height) return
-  isSyncingFromCropper.value = true
-  config.width = w
-  config.height = h
-  nextTick(() => {
-    isSyncingFromCropper.value = false
-  })
-}
-
-watch(
-  () => [config.width, config.height],
-  () => {
-    if (isSyncingFromCropper.value) return
-    if (!cropperRef.value) return
-    nextTick(() => {
-      cropperRef.value.refresh()
-    })
-  }
-)
-
 </script>
 
 <template>
@@ -201,8 +167,6 @@ watch(
           :centerBox="false"
           :full="true"
           mode="contain"
-          @realTime="syncConfigFromCropper"
-          @cropMoving="syncConfigFromCropper"
         ></vue-cropper>
       </div>
 
