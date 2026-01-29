@@ -12,7 +12,7 @@ import {
   Terminal,
   Password,
   ImageReference,
-  FitToScreen, Scale, Code, QrCode
+  FitToScreen, Scale, Code, QrCode, Crop
 } from '@vicons/carbon'
 import { RouterView } from 'vue-router'
 
@@ -88,6 +88,12 @@ export const routes = [
         name: 'image-compress',
         component: () => import('@/views/image/CompressTool.vue'),
         meta: { title: '图片压缩', icon: renderIcon(FitToScreen) },
+      },
+      {
+        path: 'crop',
+        name: 'image-crop',
+        component: () => import('@/views/image/ImageCropper.vue'),
+        meta: { title: '图片裁剪', icon: renderIcon(Crop) },
       },
       {
         path: 'resize',

@@ -1,4 +1,4 @@
-use crate::commands::image::{get_image_info, resize_image};
+use crate::commands::image::{crop_image, get_image_info, resize_image};
 
 mod commands;
 
@@ -10,7 +10,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![resize_image, get_image_info])
+        .invoke_handler(tauri::generate_handler![
+            resize_image,
+            get_image_info,
+            crop_image
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

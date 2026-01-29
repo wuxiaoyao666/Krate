@@ -40,13 +40,18 @@ const expandedKeys = ref<string[]>([])
 watch(
   () => route.matched,
   (matched) => {
-    // 把匹配到的所有路由的 name 取出来，作为展开项
-    // 例如访问 /text/hash，matched 是 ['text', 'text-hash']
-    // 我们把它们都丢进 expandedKeys，菜单自然就展开了
-    expandedKeys.value = matched.map((m) => m.name as string)
+    // 获取当前路由路径上需要展开的所有 key
+    const currentRouteKeys = matched.map((m) => m.name as string)
+
+    // 遍历这些 key，如果它不在 expandedKeys 里，就把它加进去
+    currentRouteKeys.forEach(key => {
+      if (!expandedKeys.value.includes(key)) {
+        expandedKeys.value.push(key)
+      }
+    })
   },
   { immediate: true },
-) // immediate: true 保证刷新页面时立即执行一次
+)
 
 // 处理菜单点击
 const handleUpdateValue = (key: string) => {
