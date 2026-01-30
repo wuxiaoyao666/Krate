@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { NGrid, NGi, NCard, NButton, NIcon, useMessage } from 'naive-ui'
-import { Flash, Fish, PlayFilled, TableSplit } from '@vicons/carbon'
+import { Flash, PlayFilled, TableSplit } from '@vicons/carbon'
 
 const message = useMessage()
 
@@ -23,8 +23,8 @@ const games = [
     icon: TableSplit,
     color: 'text-orange-400',
     route: '/game/2048',
-    width: 500,
-    height: 700,
+    width: 520,
+    height: 760,
   },
 ]
 
