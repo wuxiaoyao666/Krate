@@ -1,214 +1,436 @@
-<script setup lang="ts">
-import { ref, reactive, onUnmounted } from 'vue'
-import 'vue-cropper/dist/index.css'
-import { VueCropper } from 'vue-cropper'
-
-import { invoke } from '@tauri-apps/api/core'
-import { open, save } from '@tauri-apps/plugin-dialog'
-import { readFile } from '@tauri-apps/plugin-fs'
-import { NInputNumber, NButton, NIcon, useMessage, NSwitch } from 'naive-ui'
-import { Image, Save, Crop } from '@vicons/carbon'
-
-const message = useMessage()
-const cropperRef = ref()
-
-// 状态
-const imageUrl = ref('')
-const rawPath = ref('')
-const fileName = ref('')
-
-// 存储原图真实尺寸 (从 Rust 获取)
-const realSize = reactive({ w: 0, h: 0 })
-
-// 裁剪配置
-const config = reactive({
-  width: 400,
-  height: 400,
-  fixedBox: false,
-  fixed: true,
-})
-
-const selectFile = async () => {
-  try {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-    })
-
-    if (selected) {
-      rawPath.value = selected
-      fileName.value = selected.split(/[\\/]/).pop() || 'image'
-
-      // 1. 先读取文件显示
-      const fileBytes = await readFile(selected)
-      const blob = new Blob([fileBytes])
-      const url = URL.createObjectURL(blob)
-      if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-      imageUrl.value = url
-
-      try {
-        const [w, h] = await invoke<[number, number]>('get_image_info', { path: selected })
-        realSize.w = w
-        realSize.h = h
-        console.log(`原图真实尺寸: ${w}x${h}`)
-      } catch (e) {
-        console.error('获取图片信息失败', e)
-      }
-    }
-  } catch (e: any) {
-    message.error('读取图片失败: ' + e)
-  }
-}
-
-onUnmounted(() => {
-  if (imageUrl.value) URL.revokeObjectURL(imageUrl.value)
-})
-
-// 保存逻辑
-const handleSave = async () => {
-  if (!cropperRef.value) return
-
-  const axis = cropperRef.value.getCropAxis()
-
-  // 打印看看结构 (通常包含 x1, y1, x2, y2)
-  console.log('获取到的原始坐标:', axis)
-
-  if (!axis) {
-    message.error('无法获取裁剪区域')
-    return
-  }
-
-  // 我们需要转换成 Rust 需要的 x, y, width, height
-  const x = Math.round(Math.max(0, axis.x1))
-  const y = Math.round(Math.max(0, axis.y1))
-
-  // 宽 = 右边界 - 左边界
-  const w = Math.round(axis.x2 - axis.x1)
-  // 高 = 下边界 - 上边界
-  const h = Math.round(axis.y2 - axis.y1)
-
-  console.log(`计算结果: x=${x}, y=${y}, w=${w}, h=${h}`)
-
-  if (w <= 0 || h <= 0) {
-    message.error('裁剪区域无效')
-    return
-  }
-
-  // 3. 选择保存路径
-  const savePath = await save({
-    defaultPath: rawPath.value.replace(/(\.[\w]+)$/, '_crop$1'),
-    filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg'] }]
-  })
-
-  if (!savePath) return
-
-  // 4. 调用 Rust
-  try {
-    await invoke('crop_image', {
-      inputPath: rawPath.value,
-      outputPath: savePath,
-      x, y, width: w, height: h
-    })
-    message.success(`裁剪成功！`)
-  } catch (e: any) {
-    const err = typeof e === 'string' ? e : e.message
-    message.error('裁剪失败: ' + err)
-  }
-}
-
-const setRatio = (w: number, h: number) => {
-  config.width = w
-  config.height = h
-  config.fixed = true
-  // 强制刷新组件状态
-  setTimeout(() => {
-    if(cropperRef.value) cropperRef.value.refresh()
-  }, 10)
-}
-</script>
-
 <template>
-  <div class="h-full flex flex-col p-4 gap-4">
-    <div class="flex justify-between items-center bg-[#1E293B] p-4 rounded-xl border border-slate-700">
-      <div class="flex items-center gap-4">
-        <n-button @click="selectFile" type="primary" secondary>
-          <template #icon><n-icon :component="Image" /></template>
-          打开图片
-        </n-button>
-        <div v-if="fileName" class="text-slate-300 text-sm">
-          当前编辑: <span class="text-cyan-400 font-bold">{{ fileName }}</span>
-          <span class="ml-2 text-slate-500 text-xs" v-if="realSize.w">({{ realSize.w }}x{{ realSize.h }})</span>
-        </div>
+  <div class="h-full flex flex-col p-4 gap-3">
+    <!-- 顶部工具条 -->
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <n-button type="primary" @click="pickImage">选择图片</n-button>
+        <n-button :disabled="!hasImage" @click="resetCrop">重置</n-button>
+
+        <div class="h-5 w-px bg-gray-200 mx-1" />
+
+        <n-button :disabled="!hasImage" @click="zoom(0.15)">放大</n-button>
+        <n-button :disabled="!hasImage" @click="zoom(-0.15)">缩小</n-button>
+        <n-button :disabled="!hasImage" @click="rotate('left')">左转</n-button>
+        <n-button :disabled="!hasImage" @click="rotate('right')">右转</n-button>
+
+        <div class="h-5 w-px bg-gray-200 mx-1" />
+
+        <n-button type="success" :disabled="!hasImage" @click="exportCrop">导出</n-button>
       </div>
 
-      <n-button type="primary" @click="handleSave" :disabled="!imageUrl">
-        <template #icon><n-icon :component="Save" /></template>
-        保存裁剪结果
+      <n-button quaternary @click="settingsCollapsed = !settingsCollapsed">
+        {{ settingsCollapsed ? '展开设置' : '收起设置' }}
       </n-button>
     </div>
 
-    <div class="flex-1 flex gap-4 min-h-0">
-      <div class="flex-1 bg-black/50 rounded-xl overflow-hidden relative border border-slate-700">
-        <div v-if="!imageUrl" class="absolute inset-0 flex items-center justify-center text-slate-500">
-          请先打开图片
+    <!-- 主要区域 -->
+    <div class="flex-1 min-h-0 flex gap-3">
+      <!-- 裁剪区 -->
+      <div class="flex-1 min-w-0 rounded border bg-gray-50 overflow-hidden">
+        <div v-if="!hasImage" class="h-full flex items-center justify-center text-gray-400">
+          请选择一张图片开始裁剪
         </div>
 
         <vue-cropper
-          v-if="imageUrl"
+          v-else
           ref="cropperRef"
-          :img="imageUrl"
-          :outputSize="1"
-          outputType="png"
+          class="w-full h-full"
+          :img="imgUrl"
+          :outputSize="config.outputSize"
+          :outputType="config.outputType"
           :autoCrop="true"
-          :autoCropWidth="config.width"
-          :autoCropHeight="config.height"
+          :autoCropWidth="config.cropBoxW"
+          :autoCropHeight="config.cropBoxH"
           :fixed="config.fixed"
-          :fixedNumber="[config.width, config.height]"
-          :centerBox="false"
-          :full="true"
-          mode="contain"
-        ></vue-cropper>
+          :fixedNumber="[config.outW, config.outH]"
+          :centerBox="config.centerBox"
+          :canMove="true"
+          :canMoveBox="true"
+          :canScale="true"
+          :info="true"
+          :infoTrue="true"
+          :maxImgSize="config.maxImgSize"
+          :enlarge="config.enlarge"
+          :mode="'contain'"
+          @imgLoad="onImgLoad"
+        />
       </div>
 
-      <div class="w-72 bg-[#1E293B] p-4 rounded-xl border border-slate-700 flex flex-col gap-6">
-        <div>
-          <h3 class="text-slate-200 font-bold mb-4 flex items-center gap-2">
-            <n-icon :component="Crop" /> 裁剪设置
-          </h3>
+      <!-- 右侧设置（可收起） -->
+      <div
+        class="transition-all duration-200 ease-in-out flex-shrink-0"
+        :class="settingsCollapsed ? 'w-12' : 'w-64'"
+      >
+        <div class="h-full rounded border bg-white overflow-hidden flex flex-col">
+          <div class="px-3 py-2 border-b flex items-center justify-between">
+            <div class="font-medium text-sm" v-if="!settingsCollapsed">裁剪设置</div>
+            <div v-else class="text-xs text-gray-500">设</div>
+            <n-button quaternary size="small" @click="settingsCollapsed = !settingsCollapsed">
+              {{ settingsCollapsed ? '>' : '<' }}
+            </n-button>
+          </div>
 
-          <div class="space-y-4">
-            <div>
-              <div class="text-xs text-slate-400 mb-1">目标宽度 (px)</div>
-              <n-input-number v-model:value="config.width" :min="1" />
-            </div>
-            <div>
-              <div class="text-xs text-slate-400 mb-1">目标高度 (px)</div>
-              <n-input-number v-model:value="config.height" :min="1" />
+          <div v-if="!settingsCollapsed" class="p-3 flex-1 overflow-auto">
+            <n-alert type="info" :show-icon="false" class="mb-3">
+              这里的“输出尺寸”用于锁定裁剪框比例（宽:高）。如需让裁剪框立刻变成该尺寸，点“应用到裁剪框”。
+            </n-alert>
+
+            <!-- 输出尺寸（也用于固定比例） -->
+            <div class="grid grid-cols-2 gap-2">
+              <n-input-number v-model:value="config.outW" :min="1" :max="10000" size="small">
+                <template #prefix>宽</template>
+              </n-input-number>
+              <n-input-number v-model:value="config.outH" :min="1" :max="10000" size="small">
+                <template #prefix>高</template>
+              </n-input-number>
             </div>
 
-            <div class="flex items-center justify-between pt-2">
-              <span class="text-sm text-slate-400">锁定比例</span>
+            <div class="mt-2 flex items-center justify-between">
+              <span class="text-sm text-gray-600">固定比例</span>
               <n-switch v-model:value="config.fixed" size="small" />
             </div>
-            <div class="text-xs text-slate-500">
-              锁定后，拖拽边框会保持 {{config.width}}:{{config.height}} 的比例
+
+            <div class="mt-2 flex items-center justify-between">
+              <span class="text-sm text-gray-600">限制裁剪框在图内</span>
+              <n-switch v-model:value="config.centerBox" size="small" />
+            </div>
+
+            <div class="mt-3 flex gap-2">
+              <n-button size="small" @click="applySizeToCropBox" :disabled="!hasImage">应用到裁剪框</n-button>
+              <n-button size="small" @click="setPreset(1, 1)" :disabled="!hasImage">1:1</n-button>
+              <n-button size="small" @click="setPreset(4, 3)" :disabled="!hasImage">4:3</n-button>
+              <n-button size="small" @click="setPreset(16, 9)" :disabled="!hasImage">16:9</n-button>
+            </div>
+
+            <n-divider class="my-3" />
+
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-600">导出格式</span>
+              <n-select
+                v-model:value="config.outputType"
+                size="small"
+                class="w-28"
+                :options="outputTypeOptions"
+              />
+            </div>
+
+            <div class="mt-2 flex items-center justify-between">
+              <span class="text-sm text-gray-600">质量</span>
+              <n-input-number
+                v-model:value="config.outputSize"
+                :min="0.1"
+                :max="1"
+                :step="0.1"
+                size="small"
+                class="w-28"
+              />
+            </div>
+
+            <div class="mt-2 flex items-center justify-between">
+              <span class="text-sm text-gray-600">最大处理尺寸</span>
+              <n-input-number v-model:value="config.maxImgSize" :min="500" :max="20000" :step="500" size="small" class="w-28" />
+            </div>
+
+            <div class="mt-2 flex items-center justify-between">
+              <span class="text-sm text-gray-600">导出倍率</span>
+              <n-input-number v-model:value="config.enlarge" :min="0.5" :max="10" :step="0.5" size="small" class="w-28" />
+            </div>
+
+            <n-divider class="my-3" />
+
+            <div class="text-xs text-gray-500 space-y-1">
+              <div class="truncate" v-if="filePath">文件：{{ filePath }}</div>
+              <div v-if="imageInfo">尺寸：{{ imageInfo.width }} × {{ imageInfo.height }}（{{ imageInfo.format }}）</div>
+              <div v-if="cropperInfo">当前输出：{{ cropperInfo.w }} × {{ cropperInfo.h }}</div>
+              <div v-if="savePath" class="truncate">导出到：{{ savePath }}</div>
             </div>
           </div>
-        </div>
 
-        <div class="border-t border-slate-700 pt-4">
-          <h4 class="text-slate-300 text-sm mb-2">常用比例预设</h4>
-          <div class="grid grid-cols-2 gap-2">
-            <n-button size="small" secondary @click="setRatio(1080, 1920)">1080p (竖)</n-button>
-            <n-button size="small" secondary @click="setRatio(1920, 1080)">1080p (横)</n-button>
-            <n-button size="small" secondary @click="setRatio(800, 800)">1:1 方形</n-button>
-            <n-button size="small" secondary @click="setRatio(1280, 720)">720p</n-button>
+          <div v-else class="flex-1 flex flex-col items-center justify-center gap-2 p-2">
+            <n-button size="small" type="success" :disabled="!hasImage" @click="exportCrop">导出</n-button>
+            <n-button size="small" :disabled="!hasImage" @click="applySizeToCropBox">应用</n-button>
           </div>
         </div>
       </div>
     </div>
+
+    <div v-if="errorMsg" class="text-red-500 text-sm">{{ errorMsg }}</div>
   </div>
 </template>
 
-<style>
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { useMessage, NButton, NInputNumber, NSwitch, NAlert, NDivider, NSelect } from 'naive-ui'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { readFile, writeFile } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
+import { VueCropper } from 'vue-cropper'
+import 'vue-cropper/dist/index.css'
+
+type OutputType = 'png' | 'jpeg' | 'webp'
+
+const message = useMessage()
+
+const cropperRef = ref<any>(null)
+const imgUrl = ref<string | null>(null)
+const filePath = ref<string | null>(null)
+const savePath = ref<string | null>(null)
+const errorMsg = ref<string>('')
+
+const settingsCollapsed = ref(false)
+
+const imageInfo = ref<{ width: number; height: number; format: string } | null>(null)
+const cropperInfo = ref<{ w: number; h: number } | null>(null)
+
+const outputTypeOptions = [
+  { label: 'PNG', value: 'png' },
+  { label: 'JPEG', value: 'jpeg' },
+  { label: 'WEBP', value: 'webp' }
+]
+
+const config = reactive({
+  // “输出尺寸”用于固定比例（宽:高）
+  outW: 1,
+  outH: 1,
+  fixed: true,
+
+  // 裁剪框默认大小（只影响初始生成/重置/应用）
+  cropBoxW: 400,
+  cropBoxH: 400,
+
+  // 导出参数
+  outputType: 'png' as OutputType,
+  outputSize: 1,
+  enlarge: 1,
+
+  // 大图处理：越大越清晰，但更吃内存（vue-cropper 默认 2000）
+  maxImgSize: 8000,
+
+  // 限制裁剪框必须在图内（建议打开，可避免边界 bug）
+  centerBox: true
+})
+
+const hasImage = computed(() => !!imgUrl.value)
+
+function getFileName(p: string) {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i >= 0 ? p.slice(i + 1) : p
+}
+
+function stripExt(name: string) {
+  const idx = name.lastIndexOf('.')
+  return idx > 0 ? name.slice(0, idx) : name
+}
+
+function dirOf(p: string) {
+  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+  return i >= 0 ? p.slice(0, i) : ''
+}
+
+function joinPath(dir: string, name: string) {
+  if (!dir) return name
+  const sep = dir.includes('\\') ? '\\' : '/'
+  return dir.endsWith(sep) ? dir + name : dir + sep + name
+}
+
+function extForOutputType(t: OutputType) {
+  if (t === 'jpeg') return 'jpg'
+  return t
+}
+
+function ensureExt(p: string, outputType: OutputType) {
+  const ext = extForOutputType(outputType)
+  const lower = p.toLowerCase()
+  if (lower.endsWith(`.${ext}`)) return p
+  // 如果用户手动写了别的扩展名，就尊重用户，不强行改
+  if (/\.[a-z0-9]+$/i.test(p)) return p
+  return `${p}.${ext}`
+}
+
+async function pickImage() {
+  errorMsg.value = ''
+  const selected = await open({
+    multiple: false,
+    filters: [
+      {
+        name: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif', 'tiff']
+      }
+    ]
+  })
+
+  if (!selected || Array.isArray(selected)) return
+
+  filePath.value = selected
+
+  // 读文件 -> blob url
+  const bytes = await readFile(selected)
+  const blob = new Blob([bytes])
+  const url = URL.createObjectURL(blob)
+  imgUrl.value = url
+
+  // 读取图片信息（你已有的 Rust 命令）
+  try {
+    const info = await invoke<{ width: number; height: number; format: string }>('get_image_info', {
+      path: selected
+    })
+    imageInfo.value = info
+  } catch {
+    imageInfo.value = null
+  }
+
+  // 默认输出比例 = 1:1
+  config.outW = 1
+  config.outH = 1
+
+  // 默认裁剪框大小（更合理：根据窗口给一个中等值，后续可手动“应用”）
+  config.cropBoxW = 420
+  config.cropBoxH = 420
+
+  savePath.value = null
+
+  await nextTick()
+  cropperRef.value?.goAutoCrop?.()
+}
+
+function onImgLoad(status: 'success' | 'error') {
+  if (status !== 'success') {
+    errorMsg.value = '图片加载失败，请检查文件是否损坏或格式不支持'
+    return
+  }
+  errorMsg.value = ''
+  updateCropperInfo()
+}
+
+function updateCropperInfo() {
+  if (!cropperRef.value) return
+  cropperInfo.value = {
+    w: Math.round(cropperRef.value.cropW || 0),
+    h: Math.round(cropperRef.value.cropH || 0)
+  }
+}
+
+function zoom(delta: number) {
+  cropperRef.value?.changeScale?.(delta)
+  updateCropperInfo()
+}
+
+function rotate(dir: 'left' | 'right') {
+  if (dir === 'left') cropperRef.value?.rotateLeft?.()
+  else cropperRef.value?.rotateRight?.()
+  updateCropperInfo()
+}
+
+function resetCrop() {
+  cropperRef.value?.clearCrop?.()
+  cropperRef.value?.refresh?.()
+  nextTick(() => cropperRef.value?.goAutoCrop?.())
+  updateCropperInfo()
+}
+
+function applySizeToCropBox() {
+  // 把当前“输出尺寸”映射到“裁剪框默认大小”，然后重新生成裁剪框
+  config.cropBoxW = Math.max(10, Math.min(2000, Math.round(config.outW)))
+  config.cropBoxH = Math.max(10, Math.min(2000, Math.round(config.outH)))
+  nextTick(() => cropperRef.value?.goAutoCrop?.())
+}
+
+function setPreset(w: number, h: number) {
+  config.outW = w
+  config.outH = h
+  // 预设通常希望立刻作用到裁剪框
+  applySizeToCropBox()
+}
+
+async function ensureSavePath() {
+  if (savePath.value) return true
+  if (!filePath.value) return false
+
+  const fileName = getFileName(filePath.value)
+  const baseName = stripExt(fileName)
+  const ext = extForOutputType(config.outputType)
+  const defaultPath = joinPath(dirOf(filePath.value), `${baseName}-crop.${ext}`)
+
+  const picked = await save({
+    defaultPath,
+    filters: [{ name: config.outputType.toUpperCase(), extensions: [ext] }]
+  })
+  if (!picked) return false
+
+  savePath.value = ensureExt(picked, config.outputType)
+  return true
+}
+
+function getCropBlob(): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    try {
+      cropperRef.value?.getCropBlob?.((blob: Blob) => {
+        if (!blob) reject(new Error('getCropBlob 返回空数据'))
+        else resolve(blob)
+      })
+    } catch (e) {
+      reject(e)
+    }
+  })
+}
+
+/**
+ * ✅ 关键修复：
+ * 之前用 getCropAxis + Rust 裁剪，会出现“导出和预览不一致”的问题，
+ * 因为 getCropAxis 返回的是“容器坐标”，会受 contain 模式、边距、缩放影响。
+ *
+ * 现在导出直接使用 vue-cropper 的 getCropBlob（和预览同一套渲染管线），
+ * 导出的内容与当前看到的裁剪结果一致。
+ */
+async function exportCrop() {
+  try {
+    errorMsg.value = ''
+
+    if (!hasImage.value) {
+      message.warning('请先选择图片')
+      return
+    }
+    const ok = await ensureSavePath()
+    if (!ok || !savePath.value) return
+
+    const blob = await getCropBlob()
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+
+    await writeFile(savePath.value, bytes)
+
+    message.success('导出成功')
+  } catch (err: any) {
+    // 如果这里报 forbidden path，大概率是 fs scope 没放开
+    errorMsg.value = err?.message || String(err) || '导出失败'
+  }
+}
+
+// 释放 ObjectURL，避免内存泄漏
+watch(imgUrl, (next, prev) => {
+  if (prev) URL.revokeObjectURL(prev)
+})
+
+// 轻量同步裁剪框信息（拖动/缩放时 cropW/cropH 会变）
+let infoTimer: number | null = null
+watch(
+  () => [config.outW, config.outH, config.fixed, config.centerBox, config.outputType, config.outputSize, config.maxImgSize, config.enlarge],
+  () => {
+    // 防抖一下，避免输入时频繁触发
+    if (infoTimer) window.clearTimeout(infoTimer)
+    infoTimer = window.setTimeout(() => updateCropperInfo(), 80)
+  },
+  { deep: true }
+)
+
+onBeforeUnmount(() => {
+  if (imgUrl.value) URL.revokeObjectURL(imgUrl.value)
+  if (infoTimer) window.clearTimeout(infoTimer)
+})
+</script>
+
+<style scoped>
+/* 让 vue-cropper 撑满容器 */
+:deep(.cropper-box) {
+  height: 100%;
+}
 </style>
