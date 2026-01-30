@@ -2,7 +2,7 @@
 name = "Krate"
 version = "1.0.0"
 description = "Krate 森哥工具箱"
-authors = ["xiaoyao"]
+authors = ["Xiaoyao"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

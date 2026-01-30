@@ -7,7 +7,6 @@ import { routes } from '@/router/routes.ts'
 const router = useRouter()
 const route = useRoute()
 
-// 1. 动态生成菜单选项
 // 递归函数：把 Vue Router 的 routes 转换成 Naive UI 的 menuOptions
 const transformRoutesToMenu = (routes: any[]) => {
   return routes
@@ -83,8 +82,14 @@ const handleUpdateExpandedKeys = (keys: string[]) => {
       />
     </div>
 
-    <div class="p-4 border-t border-slate-800/50">
-      <div class="text-xs text-slate-500 text-center">v1.0.0 Dev</div>
+    <div class="p-4 border-t border-slate-800/50 shrink-0 bg-[#0F172A]">
+      <div class="flex flex-col items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity">
+        <div class="text-[10px] text-slate-500 font-mono">v1.0.0 Dev</div>
+        <div class="text-[11px] text-slate-400 flex items-center gap-1">
+          <span>Designed by</span>
+          <span class="text-emerald-500 font-medium">Xiaoyao</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>

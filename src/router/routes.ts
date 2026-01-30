@@ -20,7 +20,7 @@ import {
   GameConsole,
   TableSplit, Network4, Plug
 } from '@vicons/carbon'
-import { RouterView } from 'vue-router'
+import { RouteRecordRaw, RouterView } from 'vue-router'
 
 // 辅助函数：渲染图标
 function renderIcon(icon: Component) {
@@ -28,15 +28,14 @@ function renderIcon(icon: Component) {
 }
 
 // 2. 定义路由配置
-export const routes = [
+export const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    component: () => import('@/views/text/HashTool.vue'),
+    component: () => import('@/views/Home.vue'),
     meta: {
       title: '主页',
       icon: renderIcon(HomeIcon)
-      // 可以在这里加 hidden: true 如果不想在菜单显示
     }
   },
   {
@@ -52,7 +51,11 @@ export const routes = [
         path: 'port',
         name: 'system-port',
         component: () => import('@/views/system/PortManager.vue'),
-        meta: { title: '端口探针', icon: renderIcon(Plug) }
+        meta: {
+          title: '端口探针',
+          icon: renderIcon(Plug),
+          desc: '扫描本地端口占用情况并一键杀进程'
+        }
       }
     ]
   },
@@ -69,31 +72,31 @@ export const routes = [
         path: 'codec',
         name: 'text-codec',
         component: () => import('@/views/text/CodecTool.vue'),
-        meta: { title: '编码解码', icon: renderIcon(Code) }
+        meta: { title: '编码解码', icon: renderIcon(Code), desc: 'Base64 / URL / Unicode 编解码转换' }
       },
       {
         path: 'hash',
         name: 'text-hash',
         component: () => import('@/views/text/HashTool.vue'),
-        meta: { title: '哈希计算', icon: renderIcon(Locked) }
+        meta: { title: '哈希计算', icon: renderIcon(Locked), desc: '常用摘要计算，支持 Bcrypt' }
       },
       {
         path: 'json',
         name: 'text-json',
         component: () => import('@/views/text/JsonTool.vue'),
-        meta: { title: 'JSON 格式化', icon: renderIcon(Terminal) }
+        meta: { title: 'JSON 格式化', icon: renderIcon(Terminal), desc: 'JSON 美化、压缩、去转义与语法校验' }
       },
       {
         path: 'diff',
         name: 'text-diff',
         component: () => import('@/views/text/DiffTool.vue'),
-        meta: { title: '文本对比', icon: renderIcon(Compare) }
+        meta: { title: '文本对比', icon: renderIcon(Compare), desc: '代码与文本Diff' }
       },
       {
         path: 'password',
         name: 'text-password',
         component: () => import('@/views/text/PasswordGen.vue'),
-        meta: { title: '密码生成', icon: renderIcon(Password) }
+        meta: { title: '密码生成', icon: renderIcon(Password), desc: '生成高强度、自定义规则的随机密码' }
       },
       {
         path: 'jwt',
@@ -109,20 +112,21 @@ export const routes = [
     component: { render: () => h(RouterView) },
     meta: {
       title: '图片工具',
-      icon: renderIcon(ImageReference)
+      icon: renderIcon(ImageReference),
+      desc: '图像处理与生成工具'
     },
     children: [
       {
         path: 'compress',
         name: 'image-compress',
         component: () => import('@/views/image/CompressTool.vue'),
-        meta: { title: '图片压缩', icon: renderIcon(FitToScreen) }
+        meta: { title: '图片压缩', icon: renderIcon(FitToScreen), desc: 'PNG / JPG / WebP 图片无损或有损压缩' }
       },
       {
         path: 'crop',
         name: 'image-crop',
         component: () => import('@/views/image/ImageCropper.vue'),
-        meta: { title: '图片裁剪', icon: renderIcon(Crop) }
+        meta: { title: '图片裁剪', icon: renderIcon(Crop), desc: '图片自由裁剪、旋转与比例调整' }
       },
       {
         path: 'resize',
@@ -130,7 +134,8 @@ export const routes = [
         component: () => import('@/views/image/ImageResizer.vue'),
         meta: {
           title: '尺寸调整',
-          icon: renderIcon(Scale)
+          icon: renderIcon(Scale),
+          desc: '批量调整图片分辨率与文件尺寸'
         }
       },
       {
@@ -147,14 +152,15 @@ export const routes = [
     component: { render: () => h(RouterView) },
     meta: {
       title: '文档处理',
-      icon: renderIcon(DocIcon)
+      icon: renderIcon(DocIcon),
+      desc: '文档与办公辅助工具'
     },
     children: [
       {
         path: 'pdf-protect',
         name: 'doc-protect',
         component: () => import('@/views/doc/PdfProtect.vue'),
-        meta: { title: 'PDF 加解密', icon: renderIcon(PdfIcon) }
+        meta: { title: 'PDF 加解密', icon: renderIcon(PdfIcon), desc: 'PDF 文档添加密码保护或移除密码' }
       }
     ]
   },
