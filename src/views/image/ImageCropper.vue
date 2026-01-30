@@ -1,26 +1,77 @@
 <template>
   <div class="h-full flex flex-col p-4 gap-3">
     <!-- 顶部工具条 -->
-    <div class="flex items-center justify-between gap-3">
-      <div class="flex items-center gap-2 min-w-0">
-        <n-button type="primary" @click="pickImage">选择图片</n-button>
-        <n-button :disabled="!hasImage" @click="resetCrop">重置</n-button>
+    <div class="flex flex-wrap items-center gap-2">
+      <n-button type="primary" @click="pickImage">选择图片</n-button>
+      <n-button :disabled="!hasImage" @click="resetCrop">重置</n-button>
 
-        <div class="h-5 w-px bg-gray-200 mx-1" />
+      <div class="h-5 w-px bg-gray-200 mx-1" />
 
-        <n-button :disabled="!hasImage" @click="zoom(0.15)">放大</n-button>
-        <n-button :disabled="!hasImage" @click="zoom(-0.15)">缩小</n-button>
-        <n-button :disabled="!hasImage" @click="rotate('left')">左转</n-button>
-        <n-button :disabled="!hasImage" @click="rotate('right')">右转</n-button>
+      <n-button :disabled="!hasImage" @click="zoom(0.15)">放大</n-button>
+      <n-button :disabled="!hasImage" @click="zoom(-0.15)">缩小</n-button>
+      <n-button :disabled="!hasImage" @click="rotate('left')">左转</n-button>
+      <n-button :disabled="!hasImage" @click="rotate('right')">右转</n-button>
 
-        <div class="h-5 w-px bg-gray-200 mx-1" />
+      <div class="h-5 w-px bg-gray-200 mx-1" />
 
-        <n-button type="success" :disabled="!hasImage" @click="exportCrop">导出</n-button>
+      <n-button type="success" :disabled="!hasImage" @click="exportCrop">导出</n-button>
+    </div>
+
+    <!-- 设置区 -->
+    <div class="rounded border bg-white p-3 flex flex-col gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm text-gray-600">导出格式</span>
+          <n-select
+            v-model:value="config.outputType"
+            size="small"
+            class="w-28"
+            :options="outputTypeOptions"
+          />
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm text-gray-600">固定比例</span>
+          <n-switch v-model:value="config.fixed" size="small" />
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm text-gray-600">限制裁剪框在图内</span>
+          <n-switch v-model:value="config.centerBox" size="small" />
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm text-gray-600">质量</span>
+          <span class="text-sm font-medium text-gray-800">最高</span>
+        </div>
       </div>
 
-      <n-button quaternary @click="settingsCollapsed = !settingsCollapsed">
-        {{ settingsCollapsed ? '展开设置' : '收起设置' }}
-      </n-button>
+      <n-alert type="info" :show-icon="false">
+        “输出尺寸”用于锁定裁剪框比例（宽:高）。如需让裁剪框立刻变成该尺寸，点“应用到裁剪框”。
+      </n-alert>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="grid grid-cols-2 gap-2">
+          <n-input-number v-model:value="config.outW" :min="1" :max="10000" size="small">
+            <template #prefix>宽</template>
+          </n-input-number>
+          <n-input-number v-model:value="config.outH" :min="1" :max="10000" size="small">
+            <template #prefix>高</template>
+          </n-input-number>
+        </div>
+
+        <n-button size="small" @click="applySizeToCropBox" :disabled="!hasImage">应用到裁剪框</n-button>
+        <n-button size="small" @click="setPreset(1, 1)" :disabled="!hasImage">1:1</n-button>
+        <n-button size="small" @click="setPreset(4, 3)" :disabled="!hasImage">4:3</n-button>
+        <n-button size="small" @click="setPreset(16, 9)" :disabled="!hasImage">16:9</n-button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <div class="truncate" v-if="filePath">文件：{{ filePath }}</div>
+        <div v-if="imageInfo">尺寸：{{ imageInfo.width }} × {{ imageInfo.height }}（{{ imageInfo.format }}）</div>
+        <div v-if="cropperInfo">当前输出：{{ cropperInfo.w }} × {{ cropperInfo.h }}</div>
+        <div v-if="savePath" class="truncate">导出到：{{ savePath }}</div>
+      </div>
     </div>
 
     <!-- 主要区域 -->
@@ -56,102 +107,6 @@
         />
       </div>
 
-      <!-- 右侧设置（可收起） -->
-      <div
-        class="transition-all duration-200 ease-in-out flex-shrink-0"
-        :class="settingsCollapsed ? 'w-12' : 'w-64'"
-      >
-        <div class="h-full rounded border bg-white overflow-hidden flex flex-col">
-          <div class="px-3 py-2 border-b flex items-center justify-between">
-            <div class="font-medium text-sm" v-if="!settingsCollapsed">裁剪设置</div>
-            <div v-else class="text-xs text-gray-500">设</div>
-            <n-button quaternary size="small" @click="settingsCollapsed = !settingsCollapsed">
-              {{ settingsCollapsed ? '>' : '<' }}
-            </n-button>
-          </div>
-
-          <div v-if="!settingsCollapsed" class="p-3 flex-1 overflow-auto">
-            <n-alert type="info" :show-icon="false" class="mb-3">
-              这里的“输出尺寸”用于锁定裁剪框比例（宽:高）。如需让裁剪框立刻变成该尺寸，点“应用到裁剪框”。
-            </n-alert>
-
-            <!-- 输出尺寸（也用于固定比例） -->
-            <div class="grid grid-cols-2 gap-2">
-              <n-input-number v-model:value="config.outW" :min="1" :max="10000" size="small">
-                <template #prefix>宽</template>
-              </n-input-number>
-              <n-input-number v-model:value="config.outH" :min="1" :max="10000" size="small">
-                <template #prefix>高</template>
-              </n-input-number>
-            </div>
-
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-sm text-gray-600">固定比例</span>
-              <n-switch v-model:value="config.fixed" size="small" />
-            </div>
-
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-sm text-gray-600">限制裁剪框在图内</span>
-              <n-switch v-model:value="config.centerBox" size="small" />
-            </div>
-
-            <div class="mt-3 flex gap-2">
-              <n-button size="small" @click="applySizeToCropBox" :disabled="!hasImage">应用到裁剪框</n-button>
-              <n-button size="small" @click="setPreset(1, 1)" :disabled="!hasImage">1:1</n-button>
-              <n-button size="small" @click="setPreset(4, 3)" :disabled="!hasImage">4:3</n-button>
-              <n-button size="small" @click="setPreset(16, 9)" :disabled="!hasImage">16:9</n-button>
-            </div>
-
-            <n-divider class="my-3" />
-
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-600">导出格式</span>
-              <n-select
-                v-model:value="config.outputType"
-                size="small"
-                class="w-28"
-                :options="outputTypeOptions"
-              />
-            </div>
-
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-sm text-gray-600">质量</span>
-              <n-input-number
-                v-model:value="config.outputSize"
-                :min="0.1"
-                :max="1"
-                :step="0.1"
-                size="small"
-                class="w-28"
-              />
-            </div>
-
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-sm text-gray-600">最大处理尺寸</span>
-              <n-input-number v-model:value="config.maxImgSize" :min="500" :max="20000" :step="500" size="small" class="w-28" />
-            </div>
-
-            <div class="mt-2 flex items-center justify-between">
-              <span class="text-sm text-gray-600">导出倍率</span>
-              <n-input-number v-model:value="config.enlarge" :min="0.5" :max="10" :step="0.5" size="small" class="w-28" />
-            </div>
-
-            <n-divider class="my-3" />
-
-            <div class="text-xs text-gray-500 space-y-1">
-              <div class="truncate" v-if="filePath">文件：{{ filePath }}</div>
-              <div v-if="imageInfo">尺寸：{{ imageInfo.width }} × {{ imageInfo.height }}（{{ imageInfo.format }}）</div>
-              <div v-if="cropperInfo">当前输出：{{ cropperInfo.w }} × {{ cropperInfo.h }}</div>
-              <div v-if="savePath" class="truncate">导出到：{{ savePath }}</div>
-            </div>
-          </div>
-
-          <div v-else class="flex-1 flex flex-col items-center justify-center gap-2 p-2">
-            <n-button size="small" type="success" :disabled="!hasImage" @click="exportCrop">导出</n-button>
-            <n-button size="small" :disabled="!hasImage" @click="applySizeToCropBox">应用</n-button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div v-if="errorMsg" class="text-red-500 text-sm">{{ errorMsg }}</div>
@@ -160,7 +115,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { useMessage, NButton, NInputNumber, NSwitch, NAlert, NDivider, NSelect } from 'naive-ui'
+import { useMessage, NButton, NInputNumber, NSwitch, NAlert, NSelect } from 'naive-ui'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { readFile, writeFile } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
@@ -177,8 +132,6 @@ const filePath = ref<string | null>(null)
 const savePath = ref<string | null>(null)
 const errorMsg = ref<string>('')
 
-const settingsCollapsed = ref(false)
-
 const imageInfo = ref<{ width: number; height: number; format: string } | null>(null)
 const cropperInfo = ref<{ w: number; h: number } | null>(null)
 
@@ -192,7 +145,7 @@ const config = reactive({
   // “输出尺寸”用于固定比例（宽:高）
   outW: 1,
   outH: 1,
-  fixed: true,
+  fixed: false,
 
   // 裁剪框默认大小（只影响初始生成/重置/应用）
   cropBoxW: 400,
