@@ -16,14 +16,15 @@ const modeOptions = [
   { label: '行级对比 (适合代码)', value: 'lines' },
 ]
 
-// 核心：计算差异
-// Diff 库返回一个对象数组: { value: string, added?: boolean, removed?: boolean }
+// 计算差异
 const diffResult = computed(() => {
   if (!oldText.value && !newText.value) return []
 
   if (diffMode.value === 'lines') {
-    // 强制追加换行符以避免最后一行合并显示的问题
-    return Diff.diffLines(oldText.value, newText.value, { newlineIsToken: true })
+    const oldStr = oldText.value.endsWith('\n') ? oldText.value : oldText.value + '\n'
+    const newStr = newText.value.endsWith('\n') ? newText.value : newText.value + '\n'
+
+    return Diff.diffLines(oldStr, newStr)
   } else {
     return Diff.diffChars(oldText.value, newText.value)
   }
@@ -151,13 +152,3 @@ const clearAll = () => {
     </div>
   </div>
 </template>
-
-<style scoped>
-:deep(.n-input) {
-  background-color: transparent;
-}
-:deep(.n-input__textarea-el) {
-  height: 100% !important;
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
-}
-</style>
