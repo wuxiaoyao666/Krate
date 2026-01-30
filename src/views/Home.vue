@@ -70,7 +70,7 @@ const greeting = computed(() => {
   <div class="page-container h-full flex flex-col p-8 bg-[#0F172A]">
     <div class="mb-8 animate-fade-in-down">
       <h1 class="text-3xl font-bold text-slate-100 mb-2">Krate 工具箱</h1>
-      <p class="text-slate-400">{{ greeting }}，开发者。</p>
+      <p class="text-slate-400">{{ greeting }}。</p>
     </div>
 
     <div class="mb-10 max-w-2xl">
