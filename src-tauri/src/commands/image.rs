@@ -31,7 +31,7 @@ pub fn get_image_info(path: String) -> Result<(u32, u32), String> {
 }
 
 // 图片裁切
-#[tauri::command]
+/*#[tauri::command]
 pub fn crop_image(input_path: String, output_path: String, x: u32, y: u32, width: u32, height: u32) -> Result<(), String> {
     let mut img = image::open(&input_path).map_err(|e| format!("打开图片失败: {}", e))?;
 
@@ -40,4 +40,4 @@ pub fn crop_image(input_path: String, output_path: String, x: u32, y: u32, width
 
     cropped.save(&output_path).map_err(|e| format!("保存失败: {}", e))?;
     Ok(())
-}
+}*/
