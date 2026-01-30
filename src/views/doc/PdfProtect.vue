@@ -126,7 +126,7 @@ const doDecrypt = async () => {
     <div class="flex items-center justify-between pb-4 border-b border-slate-700/50">
       <div>
         <h2 class="text-2xl font-bold text-slate-100 tracking-tight">PDF 工具箱</h2>
-        <p class="text-slate-500 text-sm mt-1">Python Core 驱动 · 标准 PDF 加解密</p>
+        <p class="text-slate-500 text-sm mt-1">标准 PDF 加解密</p>
       </div>
     </div>
 

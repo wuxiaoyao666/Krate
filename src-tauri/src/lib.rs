@@ -1,4 +1,5 @@
 use crate::commands::image::{crop_image, get_image_info, resize_image};
+use crate::commands::network::{kill_process, scan_ports};
 
 mod commands;
 
@@ -13,7 +14,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             resize_image,
             get_image_info,
-            crop_image
+            crop_image,
+            scan_ports,
+            kill_process
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
