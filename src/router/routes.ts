@@ -4,7 +4,6 @@ import { NIcon } from 'naive-ui'
 import {
   Code as TextIcon,
   Document as DocIcon,
-  Settings as SettingsIcon,
   Home as HomeIcon,
   Pdf as PdfIcon,
   Compare,
@@ -226,15 +225,6 @@ export const routes: RouteRecordRaw[] = [
     meta: {
       title: '游戏',
       icon: renderIcon(GameConsole),
-    },
-  },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('@/views/text/HashTool.vue'), // 暂时占位
-    meta: {
-      title: '系统设置',
-      icon: renderIcon(SettingsIcon),
     },
   },
   {
