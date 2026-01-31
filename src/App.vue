@@ -45,6 +45,13 @@ const { initClipboard } = useClipboard()
 onMounted(() => {
   initClipboard()
 })
+
+if (import.meta.env.PROD) {
+  // 禁止右键菜单
+  document.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+  })
+}
 </script>
 
 <template>
