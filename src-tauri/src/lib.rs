@@ -1,3 +1,4 @@
+use crate::commands::archive::{create_archive, extract_archive};
 use crate::commands::image::{get_image_info, resize_image};
 use crate::commands::network::{kill_process, scan_ports};
 
@@ -15,7 +16,9 @@ pub fn run() {
             resize_image,
             get_image_info,
             scan_ports,
-            kill_process
+            kill_process,
+            create_archive,
+            extract_archive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

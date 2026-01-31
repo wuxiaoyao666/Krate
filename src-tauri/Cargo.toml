@@ -28,4 +28,6 @@ tauri-plugin-shell = "2"
 image = "0.25.9"
 tauri-plugin-fs = "2"
 tauri-plugin-clipboard-manager = "2"
-
+tar = "0.4.44"
+flate2 = "1.1.8"
+walkdir = "2.5.0"
