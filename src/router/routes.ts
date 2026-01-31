@@ -22,6 +22,8 @@ import {
   Network4,
   Plug,
   Package,
+  Screen,
+  Copy,
 } from '@vicons/carbon'
 import { RouteRecordRaw, RouterView } from 'vue-router'
 
@@ -51,6 +53,16 @@ export const routes: RouteRecordRaw[] = [
     },
     children: [
       {
+        path: 'info',
+        name: 'system-info',
+        component: () => import('@/views/system/SystemInfo.vue'),
+        meta: {
+          title: '系统监控',
+          icon: renderIcon(Screen),
+          desc: '实时查看 CPU、内存、系统负载',
+        },
+      },
+      {
         path: 'port',
         name: 'system-port',
         component: () => import('@/views/system/PortManager.vue'),
@@ -68,6 +80,16 @@ export const routes: RouteRecordRaw[] = [
           title: '私有归档',
           icon: renderIcon(Package),
           desc: '打包生成专属 .krate 格式文件',
+        },
+      },
+      {
+        path: 'clipboard',
+        name: 'system-clipboard',
+        component: () => import('@/views/system/ClipboardHistory.vue'),
+        meta: {
+          title: '剪切板历史',
+          icon: renderIcon(Copy),
+          desc: '自动记录复制历史，支持一键回填',
         },
       },
     ],
