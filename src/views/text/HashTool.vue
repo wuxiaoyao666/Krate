@@ -104,7 +104,6 @@ const clearAll = () => {
     <div class="flex items-center justify-between pb-4 border-b border-slate-700/50">
       <div>
         <h2 class="text-2xl font-bold text-slate-100 tracking-tight">哈希计算</h2>
-        <p class="text-slate-500 text-sm mt-1">本地实时计算，安全无上传</p>
       </div>
       <n-button quaternary size="small" @click="clearAll">
         <template #icon><n-icon :component="Clean" /></template>
