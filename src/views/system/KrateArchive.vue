@@ -9,7 +9,6 @@ import {
   NList,
   NListItem,
   useMessage,
-  NTag,
   NInput,
   NSelect,
   NSpin,
@@ -28,9 +27,9 @@ const packPassword = ref('')
 const compressionLevel = ref<number>(9)
 
 const levelOptions = [
-  { label: '最快 (1)', value: 1 },
-  { label: '平衡 (6)', value: 6 },
-  { label: '最高压缩 (9)', value: 9 },
+  { label: '最高压缩', value: 9 },
+  { label: '平衡', value: 6 },
+  { label: '最快', value: 1 },
 ]
 
 // ========== Unpack 数据 ==========
@@ -76,7 +75,7 @@ const handlePack = async () => {
     if (!savePath) return
 
     loading.value = true
-    loadingText.value = '正在高强度压缩与加密，请稍候...'
+    loadingText.value = '正在归档中，请稍候...'
 
     // 调用后端，await 会一直等待直到任务结束
     await invoke('create_archive', {
@@ -157,7 +156,7 @@ const handleUnpack = async () => {
 
     <div class="flex-1 grid grid-cols-2 gap-6 min-h-0">
       <NCard
-        title="创建归档 (Pack)"
+        title="创建归档"
         class="bg-slate-800/50 border-slate-700 flex flex-col h-full"
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
@@ -181,7 +180,7 @@ const handleUnpack = async () => {
             <div class="text-xs text-slate-400 mb-1">压缩等级</div>
             <NSelect v-model:value="compressionLevel" :options="levelOptions" size="small" />
           </div>
-          <div class="flex-[2]">
+          <div class="flex-2">
             <div class="text-xs text-slate-400 mb-1">密码（可选）</div>
             <NInput
               v-model:value="packPassword"
@@ -227,7 +226,7 @@ const handleUnpack = async () => {
       </NCard>
 
       <NCard
-        title="还原归档 (Unpack)"
+        title="还原归档"
         class="bg-slate-800/50 border-slate-700"
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
