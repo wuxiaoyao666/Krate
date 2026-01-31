@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import {
   NButton,
@@ -13,25 +12,18 @@ import {
   NTag,
   NInput,
   NSelect,
-  NProgress,
-  NModal,
+  NSpin,
 } from 'naive-ui'
 import { Package, Deploy, DocumentAdd, FolderAdd, Close, FolderOpen } from '@vicons/carbon'
 
 const message = useMessage()
 
-// 后端 emit 的 payload：KrateProgress
-type Phase = 'scan' | 'pack' | 'unpack'
-interface KrateProgress {
-  phase: Phase
-  current: number
-  total: number
-  message: string
-}
+// ========== 状态 ==========
+const loading = ref(false)
+const loadingText = ref('')
 
-// ========== Pack ==========
+// ========== Pack 数据 ==========
 const selectedFiles = ref<string[]>([])
-const packing = ref(false)
 const packPassword = ref('')
 const compressionLevel = ref<number>(9)
 
@@ -41,50 +33,14 @@ const levelOptions = [
   { label: '最高压缩 (9)', value: 9 },
 ]
 
-// ========== Unpack ==========
+// ========== Unpack 数据 ==========
 const archivePath = ref('')
 const extractDir = ref('')
-const unpacking = ref(false)
 const unpackPassword = ref('')
 
-// ========== Progress ==========
-const showProgress = ref(false)
-const progressPercent = ref(0)
-const progressText = ref('')
-const progressDetail = ref('')
-const progressPhase = ref<Phase>('pack')
-
-let fakeTimer: number | null = null
-const startFakeProgress = () => {
-  stopFakeProgress()
-  fakeTimer = window.setInterval(() => {
-    progressPercent.value = Math.min(95, progressPercent.value + 1)
-  }, 300)
-}
-const stopFakeProgress = () => {
-  if (fakeTimer) {
-    clearInterval(fakeTimer)
-    fakeTimer = null
-  }
-}
-
-const resetProgress = (phase: Phase) => {
-  showProgress.value = true
-  progressPhase.value = phase
-  progressPercent.value = 0
-  progressDetail.value = ''
-  progressText.value =
-    phase === 'scan' ? '扫描文件...' : phase === 'pack' ? '正在打包...' : '正在解压...'
-  startFakeProgress()
-}
-
-const closeProgress = () => {
-  stopFakeProgress()
-  showProgress.value = false
-}
-
-// ========== helpers ==========
+// ========== 辅助函数 ==========
 const dirname = (p: string) => {
+  // 简单的跨平台获取目录名
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
   return i >= 0 ? p.slice(0, i) : ''
 }
@@ -105,10 +61,10 @@ const addFolder = async () => {
 
 const removeFile = (index: number) => selectedFiles.value.splice(index, 1)
 
-const canPack = computed(() => selectedFiles.value.length > 0 && !packing.value)
-const canUnpack = computed(() => !!archivePath.value && !!extractDir.value && !unpacking.value)
+const canPack = computed(() => selectedFiles.value.length > 0)
+const canUnpack = computed(() => !!archivePath.value && !!extractDir.value)
 
-// ========== Pack ==========
+// ========== Pack 逻辑 ==========
 const handlePack = async () => {
   if (!selectedFiles.value.length) return
 
@@ -119,30 +75,29 @@ const handlePack = async () => {
     })
     if (!savePath) return
 
-    packing.value = true
-    resetProgress('scan') // 后端会先发 scan 再 pack
+    loading.value = true
+    loadingText.value = '正在高强度压缩与加密，请稍候...'
 
-    // ✅ 重点：Tauri 前端传参使用 camelCase
+    // 调用后端，await 会一直等待直到任务结束
     await invoke('create_archive', {
       inputs: selectedFiles.value,
-      outputPath: savePath, // ✅ 必须 outputPath
+      outputPath: savePath,
       password: packPassword.value.trim() || null,
-      gzipLevel: compressionLevel.value, // ✅ 对应 Rust gzip_level
+      gzipLevel: compressionLevel.value,
     })
 
     message.success('打包成功！已生成 .krate 文件')
+    // 清理状态
     selectedFiles.value = []
     packPassword.value = ''
-    closeProgress()
   } catch (e: any) {
-    message.error('打包失败: ' + (e?.message ?? e))
-    closeProgress()
+    message.error('打包失败: ' + (e?.message || e))
   } finally {
-    packing.value = false
+    loading.value = false
   }
 }
 
-// ========== Unpack ==========
+// ========== Unpack 逻辑 ==========
 const selectArchive = async () => {
   const selected = await open({ filters: [{ name: 'Krate Package', extensions: ['krate'] }] })
   if (selected && typeof selected === 'string') {
@@ -160,77 +115,47 @@ const handleUnpack = async () => {
   if (!archivePath.value || !extractDir.value) return
 
   try {
-    unpacking.value = true
-    resetProgress('unpack')
+    loading.value = true
+    loadingText.value = '正在验证密钥并解压...'
 
-    // ✅ 同样 camelCase
     await invoke('extract_archive', {
-      archivePath: archivePath.value, // ✅ archivePath
-      outputDir: extractDir.value, // ✅ outputDir
+      archivePath: archivePath.value,
+      outputDir: extractDir.value,
       password: unpackPassword.value.trim() || null,
     })
 
     message.success('解压成功！')
-    closeProgress()
   } catch (e: any) {
-    message.error('解压失败: ' + (e?.message ?? e))
-    closeProgress()
+    message.error('解压失败: ' + (e?.message || e))
   } finally {
-    unpacking.value = false
+    loading.value = false
   }
 }
-
-// ========== listen progress ==========
-let unlisten: UnlistenFn | null = null
-
-onMounted(async () => {
-  unlisten = await listen<KrateProgress>('krate://progress', (ev) => {
-    const p = ev.payload
-
-    if (!showProgress.value) resetProgress(p.phase)
-
-    progressPhase.value = p.phase
-    progressDetail.value = p.message || ''
-
-    if (p.phase === 'scan') progressText.value = '扫描文件...'
-    if (p.phase === 'pack') progressText.value = '正在打包...'
-    if (p.phase === 'unpack') progressText.value = '正在解压...'
-
-    if (p.total && p.total > 0) {
-      stopFakeProgress()
-      const percent = Math.round((p.current / p.total) * 100)
-      progressPercent.value = Math.max(0, Math.min(100, percent))
-    } else {
-      if (!fakeTimer) startFakeProgress()
-    }
-
-    // 完成：current>=total
-    if (p.total > 0 && p.current >= p.total) {
-      stopFakeProgress()
-      progressPercent.value = 100
-      progressText.value = '完成'
-    }
-  })
-})
-
-onBeforeUnmount(() => {
-  unlisten?.()
-  stopFakeProgress()
-})
 </script>
 
 <template>
-  <div class="h-full flex flex-col p-6 space-y-4">
+  <div class="h-full flex flex-col p-6 space-y-4 relative">
+    <div
+      v-if="loading"
+      class="absolute inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl select-none"
+    >
+      <div
+        class="bg-slate-800 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center"
+      >
+        <NSpin size="large" />
+        <div class="mt-4 text-emerald-400 font-bold text-lg animate-pulse">{{ loadingText }}</div>
+        <div class="mt-2 text-xs text-slate-500">大文件处理可能需要一些时间</div>
+      </div>
+    </div>
+
     <div class="flex justify-between items-center">
       <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
         <n-icon class="text-emerald-400"><Package /></n-icon>
         Krate 私有归档
       </h2>
-      <NTag type="warning" size="small" :bordered="false">仅限 Krate 内部使用的 .krate 格式</NTag>
     </div>
 
     <div class="flex-1 grid grid-cols-2 gap-6 min-h-0">
-      <!-- Pack -->
       <NCard
         title="创建归档 (Pack)"
         class="bg-slate-800/50 border-slate-700 flex flex-col h-full"
@@ -257,13 +182,13 @@ onBeforeUnmount(() => {
             <NSelect v-model:value="compressionLevel" :options="levelOptions" size="small" />
           </div>
           <div class="flex-[2]">
-            <div class="text-xs text-slate-400 mb-1">密码（可选，加密后只有本软件可解）</div>
+            <div class="text-xs text-slate-400 mb-1">密码（可选）</div>
             <NInput
               v-model:value="packPassword"
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="留空 = 不加密"
+              placeholder="留空则不加密"
             />
           </div>
         </div>
@@ -290,18 +215,17 @@ onBeforeUnmount(() => {
             </NListItem>
           </NList>
           <div v-else class="h-full flex items-center justify-center text-slate-600 text-sm">
-            拖拽或点击上方按钮添加内容
+            请添加文件或文件夹
           </div>
         </div>
 
         <div class="mt-4">
-          <NButton type="primary" block @click="handlePack" :loading="packing" :disabled="!canPack">
+          <NButton type="primary" block @click="handlePack" :disabled="!canPack || loading">
             生成 .krate 包
           </NButton>
         </div>
       </NCard>
 
-      <!-- Unpack -->
       <NCard
         title="还原归档 (Unpack)"
         class="bg-slate-800/50 border-slate-700"
@@ -325,25 +249,26 @@ onBeforeUnmount(() => {
           <div class="space-y-2">
             <div class="text-xs text-slate-400">解压位置</div>
             <NInput
-              placeholder="选择解压目录..."
+              size="small"
               v-model:value="extractDir"
+              placeholder="默认解压到同级目录"
               readonly
               @click="selectExtractDir"
             >
-              <template #suffix>
-                <NIcon class="cursor-pointer"><FolderOpen /></NIcon>
-              </template>
+              <template #suffix
+                ><NIcon><FolderOpen /></NIcon
+              ></template>
             </NInput>
           </div>
 
           <div class="space-y-2">
-            <div class="text-xs text-slate-400">密码（如果包加密）</div>
+            <div class="text-xs text-slate-400">解压密码</div>
             <NInput
               v-model:value="unpackPassword"
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="加密包必填"
+              placeholder="若文件已加密则必填"
             />
           </div>
         </div>
@@ -354,8 +279,7 @@ onBeforeUnmount(() => {
             secondary
             block
             @click="handleUnpack"
-            :loading="unpacking"
-            :disabled="!canUnpack"
+            :disabled="!canUnpack || loading"
           >
             <template #icon
               ><NIcon><Deploy /></NIcon
@@ -365,14 +289,6 @@ onBeforeUnmount(() => {
         </div>
       </NCard>
     </div>
-
-    <!-- Progress Modal -->
-    <NModal v-model:show="showProgress" :mask-closable="false" preset="card" style="width: 520px">
-      <div class="text-slate-100 font-semibold mb-2">{{ progressText }}</div>
-      <NProgress type="line" :percentage="progressPercent" indicator-placement="inside" />
-      <div class="text-xs text-slate-400 mt-2 break-all">{{ progressDetail }}</div>
-      <div class="text-xs text-slate-500 mt-1">提示：大文件压缩/解压需要时间，进度会持续更新</div>
-    </NModal>
   </div>
 </template>
 
