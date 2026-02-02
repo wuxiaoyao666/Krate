@@ -1,3 +1,5 @@
+// 只在 Windows 下引入 HashMap
+#[cfg(target_os = "windows")]
 use std::collections::HashMap;
 use std::process::Command;
 use tauri::command;
