@@ -1,8 +1,7 @@
 import os
-
+import pikepdf
 
 def encrypt_pdf(payload):
-    import pikepdf
     """
     加密 PDF
     参数 payload 格式: { "input": "路径", "output": "路径", "password": "密码" }
@@ -31,7 +30,6 @@ def encrypt_pdf(payload):
 
 
 def decrypt_pdf(payload):
-    import pikepdf
     """
     解密 PDF
     """
