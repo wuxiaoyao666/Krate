@@ -123,7 +123,8 @@ const greeting = computed(() => {
                 </n-text>
               </div>
 
-              <n-text class="text-xs text-slate-500 font-medium pl-1 group-hover:text-slate-400 transition-colors line-clamp-2 z-10 leading-relaxed">
+              <n-text
+                class="text-xs text-slate-500 font-medium pl-1 group-hover:text-slate-400 transition-colors line-clamp-2 z-10 leading-relaxed">
                 {{ item.desc }}
               </n-text>
 
@@ -148,13 +149,16 @@ const greeting = computed(() => {
   width: 6px;
   height: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 3px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
@@ -165,9 +169,11 @@ const greeting = computed(() => {
   border-color: rgba(51, 65, 85, 1) !important;
   color: #e2e8f0 !important;
 }
+
 :deep(.n-input:hover) {
   border-color: #10b981 !important;
 }
+
 :deep(.n-input.n-input--focus) {
   border-color: #10b981 !important;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
@@ -177,8 +183,15 @@ const greeting = computed(() => {
 .animate-fade-in-down {
   animation: fadeInDown 0.5s ease-out;
 }
+
 @keyframes fadeInDown {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
