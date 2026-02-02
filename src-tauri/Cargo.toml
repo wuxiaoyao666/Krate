@@ -34,3 +34,6 @@ tar = "0.4.44"
 flate2 = "1.1.8"
 # 系统信息
 sysinfo = "0.38.0"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"

@@ -8,8 +8,8 @@ use tauri::{command, State};
 pub struct SystemInfo {
     // CPU
     cpu_brand: String,
-    cpu_usage: f32, // 全局使用率
-    cpu_cores: usize, // 物理核心
+    cpu_usage: f32,           // 全局使用率
+    cpu_cores: usize,         // 物理核心
     cpu_logical_cores: usize, // 逻辑核心
 
     // 内存 字节
@@ -60,7 +60,8 @@ pub fn get_system_info(state: State<SystemState>) -> SystemInfo {
 
     // 收集 CPU 信息
     let cpus = sys.cpus();
-    let cpu_brand = cpus.first()
+    let cpu_brand = cpus
+        .first()
         .map(|c| c.brand().to_string())
         .unwrap_or_else(|| "Unknown CPU".to_string());
 

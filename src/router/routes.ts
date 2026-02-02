@@ -22,7 +22,7 @@ import {
   Plug,
   Package,
   Screen,
-  Copy,
+  Copy, Settings
 } from '@vicons/carbon'
 import { RouteRecordRaw, RouterView } from 'vue-router'
 
@@ -244,4 +244,13 @@ export const routes: RouteRecordRaw[] = [
       standalone: true, // 独立窗口模式
     },
   },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/Settings.vue'),
+    meta: {
+      title: '系统设置',
+      icon: renderIcon(Settings)
+    }
+  }
 ]
