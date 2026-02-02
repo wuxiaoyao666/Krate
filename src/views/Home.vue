@@ -3,9 +3,8 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { routes } from '@/router/routes'
 import {
-  NInput, NIcon, NGrid, NGridItem, NCard, NText
+  NInput, NIcon, NGrid, NGridItem, NText
 } from 'naive-ui'
-
 import { Search, SettingsAdjust, UserAvatar } from '@vicons/carbon'
 
 const router = useRouter()
@@ -88,30 +87,48 @@ const greeting = computed(() => {
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar pr-2">
-      <div v-for="group in filteredGroups" :key="group.name as string" class="mb-8">
-        <h3 class="text-lg font-semibold text-slate-300 mb-4 flex items-center">
-          <span class="w-1 h-4 bg-emerald-500 rounded mr-2"></span>
+      <div v-for="group in filteredGroups" :key="group.name as string" class="mb-10">
+        <h3 class="text-lg font-bold text-slate-300 mb-5 flex items-center tracking-wide">
+          <span class="w-1 h-5 bg-emerald-500 rounded-full mr-3 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span>
           {{ group.name }}
         </h3>
 
-        <n-grid x-gap="16" y-gap="16" cols="2 s:3 m:4 l:5" responsive="screen">
+        <n-grid x-gap="20" y-gap="20" cols="1 s:2 m:3 l:4" responsive="screen">
           <n-grid-item v-for="item in group.items" :key="item.key as string">
-            <n-card
-              hoverable
-              class="cursor-pointer bg-slate-800/50 border border-slate-700/50 group hover:border-emerald-500/50 transition-all duration-200 hover:-translate-y-1"
-              content-style="padding: 16px;"
+
+            <div
+              class="group relative h-32 bg-slate-800/40 rounded-2xl p-5 cursor-pointer
+                     border border-slate-700/50
+                     hover:bg-slate-800 hover:border-emerald-500/50
+                     hover:shadow-lg hover:shadow-emerald-500/10
+                     hover:-translate-y-1
+                     transition-all duration-300 ease-out flex flex-col justify-between overflow-hidden"
               @click="handleJump(item.key as string)"
             >
-              <div class="flex flex-col h-full">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="p-2 rounded-lg bg-slate-700/50 text-emerald-400 group-hover:bg-emerald-500/10 group-hover:text-emerald-400 transition-colors">
-                    <component :is="item.icon" class="w-5 h-5" />
-                  </div>
-                </div>
-                <n-text class="font-bold text-slate-200 text-base mb-1">{{ item.label }}</n-text>
-                <n-text class="text-xs text-slate-500 line-clamp-2 h-8">{{ item.desc }}</n-text>
+              <div class="absolute -right-5 -bottom-5 opacity-[0.05] group-hover:opacity-[0.1]
+                          group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 text-slate-200">
+                <component :is="item.icon" class="w-24 h-24" />
               </div>
-            </n-card>
+
+              <div class="flex items-center gap-3 z-10">
+                <div
+                  class="w-10 h-10 rounded-lg bg-slate-700/30 flex items-center justify-center
+                         text-emerald-400 group-hover:bg-emerald-500/20 group-hover:text-emerald-300
+                         transition-colors duration-300"
+                >
+                  <component :is="item.icon" class="w-5 h-5" />
+                </div>
+                <n-text class="font-bold text-slate-200 text-base group-hover:text-white transition-colors">
+                  {{ item.label }}
+                </n-text>
+              </div>
+
+              <n-text class="text-xs text-slate-500 font-medium pl-1 group-hover:text-slate-400 transition-colors line-clamp-2 z-10 leading-relaxed">
+                {{ item.desc }}
+              </n-text>
+
+            </div>
+
           </n-grid-item>
         </n-grid>
       </div>
@@ -126,6 +143,7 @@ const greeting = computed(() => {
 </template>
 
 <style scoped>
+/* === 滚动条样式 === */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -140,6 +158,8 @@ const greeting = computed(() => {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* === 搜索框样式 === */
 :deep(.search-input) {
   background-color: rgba(30, 41, 59, 0.5) !important;
   border-color: rgba(51, 65, 85, 1) !important;
@@ -152,6 +172,8 @@ const greeting = computed(() => {
   border-color: #10b981 !important;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
 }
+
+/* === 简单的入场动画 === */
 .animate-fade-in-down {
   animation: fadeInDown 0.5s ease-out;
 }
