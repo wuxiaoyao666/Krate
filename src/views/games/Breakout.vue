@@ -4,7 +4,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 // 游戏状态
 const score = ref(0)
-const lives = ref(3)
+const lives = ref(1)
 const isPlaying = ref(false)
 const isPaused = ref(false)
 const gameOver = ref(false)
@@ -14,20 +14,32 @@ const gameWin = ref(false)
 const PADDLE_WIDTH = 100
 const PADDLE_HEIGHT = 10
 const BALL_RADIUS = 6
+const BRICK_WIDTH = 75
+const BRICK_HEIGHT = 20
 const BRICK_ROW_COUNT = 5
 const BRICK_COLUMN_COUNT = 9
 const BRICK_PADDING = 10
 const BRICK_OFFSET_TOP = 60
 const BRICK_OFFSET_LEFT = 35
 const PADDLE_BOTTOM_GAP = 10
+const KEYBOARD_PADDLE_SPEED = 9
 
 // 运行时变量
 let ctx: CanvasRenderingContext2D | null = null
-let animationId: number
+let animationId = 0
 let paddleX: number
 let ball = { x: 0, y: 0, dx: 4, dy: -4, speed: 6 } // 增加了 speed 属性
 let bricks: { x: number; y: number; status: number; color: string }[][] = []
 let particles: Particle[] = []
+let leftKeyPressed = false
+let rightKeyPressed = false
+
+const clampPaddleX = () => {
+  if (!canvasRef.value) return
+  if (paddleX < 0) paddleX = 0
+  const maxX = canvasRef.value.width - PADDLE_WIDTH
+  if (paddleX > maxX) paddleX = maxX
+}
 
 // 粒子类 (用于爆炸特效)
 class Particle {
@@ -64,13 +76,15 @@ const initBricks = () => {
 // 游戏重置
 const resetGame = () => {
   if (!canvasRef.value) return
-  cancelAnimationFrame(animationId)
+  if (animationId) cancelAnimationFrame(animationId)
   score.value = 0
-  lives.value = 3
+  lives.value = 1
   isPlaying.value = true
   isPaused.value = false
   gameOver.value = false
   gameWin.value = false
+  leftKeyPressed = false
+  rightKeyPressed = false
   paddleX = (canvasRef.value.width - PADDLE_WIDTH) / 2
   resetBall()
   initBricks()
@@ -97,13 +111,13 @@ const draw = () => {
   for (let c = 0; c < BRICK_COLUMN_COUNT; c++) {
     for (let r = 0; r < BRICK_ROW_COUNT; r++) {
       if (bricks[c][r].status === 1) {
-        const brickX = (c * (75 + BRICK_PADDING)) + BRICK_OFFSET_LEFT
-        const brickY = (r * (20 + BRICK_PADDING)) + BRICK_OFFSET_TOP
+        const brickX = (c * (BRICK_WIDTH + BRICK_PADDING)) + BRICK_OFFSET_LEFT
+        const brickY = (r * (BRICK_HEIGHT + BRICK_PADDING)) + BRICK_OFFSET_TOP
         bricks[c][r].x = brickX
         bricks[c][r].y = brickY
 
         ctx.beginPath()
-        ctx.roundRect(brickX, brickY, 75, 20, 4)
+        ctx.roundRect(brickX, brickY, BRICK_WIDTH, BRICK_HEIGHT, 4)
         ctx.fillStyle = bricks[c][r].color
         ctx.shadowBlur = 10
         ctx.shadowColor = bricks[c][r].color
@@ -135,11 +149,11 @@ const draw = () => {
   ctx.closePath()
 
   // 4. 绘制粒子
-  particles.forEach((p, index) => {
-    p.update()
-    p.draw(ctx!)
-    if (p.life <= 0) particles.splice(index, 1)
-  })
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update()
+    particles[i].draw(ctx)
+    if (particles[i].life <= 0) particles.splice(i, 1)
+  }
 }
 
 // 碰撞检测与逻辑更新
@@ -147,6 +161,12 @@ const update = () => {
   if (!canvasRef.value) return
   const { width, height } = canvasRef.value
   const paddleTop = height - PADDLE_HEIGHT - PADDLE_BOTTOM_GAP
+
+  if (leftKeyPressed !== rightKeyPressed) {
+    paddleX += leftKeyPressed ? -KEYBOARD_PADDLE_SPEED : KEYBOARD_PADDLE_SPEED
+    clampPaddleX()
+  }
+
   const nextX = ball.x + ball.dx
   const nextY = ball.y + ball.dy
 
@@ -178,15 +198,11 @@ const update = () => {
   }
 
   // 漏球判定
-  if (nextY - BALL_RADIUS > height) {
-    lives.value--
-    if (lives.value <= 0) {
-      gameOver.value = true
-      isPlaying.value = false
-      cancelAnimationFrame(animationId)
-    } else {
-      resetBall()
-    }
+  if (nextY + BALL_RADIUS >= height) {
+    lives.value = 0
+    gameOver.value = true
+    isPlaying.value = false
+    if (animationId) cancelAnimationFrame(animationId)
     return
   }
 
@@ -201,7 +217,13 @@ const update = () => {
       const b = bricks[c][r]
       if (b.status === 1) {
         activeBricks++
-        if (ball.x > b.x && ball.x < b.x + 75 && ball.y > b.y && ball.y < b.y + 20) {
+        const hitBrick =
+          nextX + BALL_RADIUS > b.x &&
+          nextX - BALL_RADIUS < b.x + BRICK_WIDTH &&
+          nextY + BALL_RADIUS > b.y &&
+          nextY - BALL_RADIUS < b.y + BRICK_HEIGHT
+
+        if (hitBrick) {
           ball.dy = -ball.dy
           b.status = 0
           score.value += 10
@@ -217,7 +239,7 @@ const update = () => {
   if (activeBricks === 0) {
     gameWin.value = true
     isPlaying.value = false
-    cancelAnimationFrame(animationId)
+    if (animationId) cancelAnimationFrame(animationId)
   }
 }
 
@@ -235,17 +257,37 @@ const mouseMoveHandler = (e: MouseEvent) => {
   const relativeX = e.clientX - rect.left
   if (relativeX > 0 && relativeX < canvasRef.value.width) {
     paddleX = relativeX - PADDLE_WIDTH / 2
-    // 边界限制
-    if (paddleX < 0) paddleX = 0
-    if (paddleX + PADDLE_WIDTH > canvasRef.value.width) paddleX = canvasRef.value.width - PADDLE_WIDTH
+    clampPaddleX()
   }
 }
 
 const keydownHandler = (e: KeyboardEvent) => {
-  if (e.key !== 'Escape' || !isPlaying.value) return
-  isPaused.value = !isPaused.value
-  if (!isPaused.value) {
-    animate()
+  if (e.key === 'Escape' && isPlaying.value) {
+    isPaused.value = !isPaused.value
+    if (!isPaused.value) {
+      animate()
+    }
+    return
+  }
+
+  if (!isPlaying.value || isPaused.value) return
+
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+    leftKeyPressed = true
+    e.preventDefault()
+  } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+    rightKeyPressed = true
+    e.preventDefault()
+  }
+}
+
+const keyupHandler = (e: KeyboardEvent) => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+    leftKeyPressed = false
+    e.preventDefault()
+  } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+    rightKeyPressed = false
+    e.preventDefault()
   }
 }
 
@@ -261,6 +303,7 @@ onMounted(() => {
     paddleX = (canvasRef.value.width - PADDLE_WIDTH) / 2
     document.addEventListener('mousemove', mouseMoveHandler, false)
     document.addEventListener('keydown', keydownHandler, false)
+    document.addEventListener('keyup', keyupHandler, false)
     initBricks()
     draw() // 绘制初始画面
   }
@@ -269,7 +312,10 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('mousemove', mouseMoveHandler)
   document.removeEventListener('keydown', keydownHandler)
-  cancelAnimationFrame(animationId)
+  document.removeEventListener('keyup', keyupHandler)
+  leftKeyPressed = false
+  rightKeyPressed = false
+  if (animationId) cancelAnimationFrame(animationId)
 })
 </script>
 
@@ -277,10 +323,10 @@ onUnmounted(() => {
   <div class="fixed inset-0 bg-[#0F172A] flex flex-col items-center justify-center select-none overflow-hidden">
     <div class="absolute top-6 left-8 z-10 flex gap-8 font-mono text-xl font-bold tracking-widest pointer-events-none">
       <div class="text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)]">
-        SCORE: {{ score }}
+        得分：{{ score }}
       </div>
       <div class="text-rose-400 drop-shadow-[0_0_5px_rgba(244,63,94,0.5)]">
-        LIVES: {{ lives }}
+        生命：{{ lives }}
       </div>
     </div>
 
@@ -298,11 +344,11 @@ onUnmounted(() => {
       <h1
         class="text-6xl font-black italic tracking-tighter mb-4 text-transparent bg-clip-text bg-linear-to-r from-emerald-400 to-cyan-500 drop-shadow-lg"
       >
-        {{ gameWin ? 'VICTORY!' : gameOver ? 'GAME OVER' : isPaused ? 'PAUSED' : 'BREAKOUT' }}
+        {{ gameWin ? '胜利' : gameOver ? '游戏结束' : isPaused ? '已暂停' : '霓虹打砖块' }}
       </h1>
 
       <p class="text-slate-300 mb-10 font-mono text-lg">
-        {{ gameWin ? `完美通关！最终得分: ${score}` : gameOver ? `最终得分: ${score}` : isPaused ? '按 ESC 或点击继续按钮恢复游戏' : '控制挡板击碎所有砖块' }}
+        {{ gameWin ? `完美通关，最终得分：${score}` : gameOver ? `最终得分：${score}` : isPaused ? '按 ESC 或点击继续按钮恢复游戏' : '移动挡板并击碎全部砖块' }}
       </p>
 
       <button
@@ -315,7 +361,7 @@ onUnmounted(() => {
     </div>
 
     <div class="absolute bottom-4 text-slate-600 text-xs font-mono">
-      MOUSE CONTROL · ESC TO PAUSE / RESUME
+      鼠标、方向键或 A/D 控制 · ESC 暂停或继续
     </div>
   </div>
 </template>
