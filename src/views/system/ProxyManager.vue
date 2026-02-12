@@ -116,7 +116,8 @@ const sanitizeRoutes = (list: ProxyRouteForm[]) => {
     name: route.name.trim(),
     host: route.host.trim(),
     pathPrefix: normalizePathPrefix(route.pathPrefix),
-    target: route.target.trim()
+    target: route.target.trim(),
+    allowInsecureTls: Boolean(route.allowInsecureTls)
   }))
 }
 
@@ -338,7 +339,7 @@ onUnmounted(() => {
         <template #header>使用说明</template>
         <n-alert type="info" :show-icon="false">
           <div class="text-xs leading-6">
-            1. 支持 HTTP / HTTPS 上游地址（`http://` 或 `https://`）。<br />
+            1. 支持 HTTP / HTTPS / WS / WSS 上游地址。<br />
             2. `Host` 留空表示匹配所有域名。<br />
             3. `路径前缀` 支持按最长前缀匹配。<br />
             4. `剥离前缀` 开启后，转发时会移除该前缀。<br />
@@ -400,7 +401,7 @@ onUnmounted(() => {
               <n-input v-model:value="route.pathPrefix" placeholder="/api" />
             </n-form-item>
             <n-form-item label="上游目标" class="mb-0">
-              <n-input v-model:value="route.target" placeholder="http://127.0.0.1:3000 或 https://api.example.com" />
+              <n-input v-model:value="route.target" placeholder="http://127.0.0.1:3000 / https://api.example.com / wss://socket.example.com" />
             </n-form-item>
           </div>
 
@@ -416,7 +417,7 @@ onUnmounted(() => {
               <span class="text-xs text-slate-400">忽略 HTTPS 证书校验</span>
               <n-switch v-model:value="route.allowInsecureTls" />
               <span class="text-xs text-slate-500">
-                仅对 `https://` 上游生效
+                仅对 HTTPS/WSS 上游生效（仅建议开发调试时开启）
               </span>
             </div>
           </div>
