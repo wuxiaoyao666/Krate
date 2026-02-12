@@ -144,25 +144,6 @@ const greeting = computed(() => {
 </template>
 
 <style scoped>
-/* === 滚动条样式 === */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 3px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
 /* === 搜索框样式 === */
 :deep(.search-input) {
   background-color: rgba(30, 41, 59, 0.5) !important;

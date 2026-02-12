@@ -3,9 +3,44 @@
 :root {
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     user-select: none; /* 禁止用户像选网页文字一样选中文本，更像 App */
+    --krate-scrollbar-size: 10px;
+    --krate-scrollbar-track: rgba(15, 23, 42, 0.4);
+    --krate-scrollbar-thumb: rgba(34, 211, 238, 0.5);
+    --krate-scrollbar-thumb-hover: rgba(16, 185, 129, 0.6);
 }
 
 body {
     margin: 0;
     background-color: #0F172A; /* 防止加载时的白屏闪烁 */
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--krate-scrollbar-thumb) var(--krate-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+    width: var(--krate-scrollbar-size);
+    height: var(--krate-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--krate-scrollbar-track);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(34, 211, 238, 0.58), rgba(16, 185, 129, 0.48));
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    min-height: 40px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(34, 211, 238, 0.74), rgba(16, 185, 129, 0.62));
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
 }

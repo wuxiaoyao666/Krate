@@ -94,8 +94,3 @@ const handleUpdateExpandedKeys = (keys: string[]) => {
   </div>
 </template>
 
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 0;
-}
-</style>

@@ -321,12 +321,3 @@ const totalSavings = computed(() => {
   </div>
 </template>
 
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
-}
-</style>
