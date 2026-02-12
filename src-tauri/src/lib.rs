@@ -1,6 +1,7 @@
 use crate::commands::archive::{create_archive, extract_archive};
 use crate::commands::image::{get_image_info, resize_image};
 use crate::commands::network::{kill_process, scan_ports};
+use crate::commands::proxy::{proxy_get_status, proxy_start, proxy_stop, ProxyState};
 use crate::commands::system::{get_system_info, SystemState};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -74,6 +75,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(SystemState::new()) // 系统信息
+        .manage(ProxyState::new())
         .invoke_handler(tauri::generate_handler![
             resize_image,
             get_image_info,
@@ -81,7 +83,10 @@ pub fn run() {
             kill_process,
             create_archive,
             extract_archive,
-            get_system_info
+            get_system_info,
+            proxy_start,
+            proxy_stop,
+            proxy_get_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

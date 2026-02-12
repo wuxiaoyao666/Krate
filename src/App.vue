@@ -79,7 +79,10 @@ if (import.meta.env.PROD) {
             <div
               class="h-full w-full bg-[#1E293B] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative border border-slate-700/30"
             >
-              <div data-tauri-drag-region class="h-8 w-full absolute top-0 left-0 z-50"></div>
+              <div
+                data-tauri-drag-region
+                class="h-8 w-full shrink-0 border-b border-slate-700/40 bg-gradient-to-r from-slate-900/70 to-slate-800/50"
+              ></div>
 
               <div class="flex-1 p-8 overflow-y-auto">
                 <router-view v-slot="{ Component }">

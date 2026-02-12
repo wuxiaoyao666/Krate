@@ -83,6 +83,16 @@ export const routes: RouteRecordRaw[] = [
         }
       },
       {
+        path: 'proxy',
+        name: 'system-proxy',
+        component: () => import('@/views/system/ProxyManager.vue'),
+        meta: {
+          title: '反向代理',
+          icon: renderIcon(Network4),
+          desc: '可视化管理本地 HTTP 反向代理路由'
+        }
+      },
+      {
         path: 'clipboard',
         name: 'system-clipboard',
         component: () => import('@/views/system/ClipboardHistory.vue'),
