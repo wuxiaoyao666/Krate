@@ -256,6 +256,17 @@ export const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/game/breakout',
+    name: 'game-breakout',
+    component: () => import('@/views/games/Breakout.vue'),
+    meta: {
+      title: '霓虹打砖块',
+      hidden: true,
+      standalone: true,
+      desc: '经典弹球消除游戏'
+    }
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/Settings.vue'),
