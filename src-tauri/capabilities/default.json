@@ -15,6 +15,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
+    "notification:default",
     "opener:default",
     "dialog:default",
     "shell:default",

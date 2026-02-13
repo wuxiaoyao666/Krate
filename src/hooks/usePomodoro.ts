@@ -1,4 +1,9 @@
 import { computed, ref, watchEffect } from 'vue'
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification'
 import type { FocusMode, FocusTask, RunningMode, TaskDraft } from './pomodoroTypes'
 import {
   closePomodoroMiniWindow,
@@ -102,6 +107,23 @@ const progressBarClass = computed(() => {
   if (mode.value === 'break') return 'bg-indigo-500'
   return mode.value === 'timer' ? 'bg-emerald-500' : 'bg-cyan-500'
 })
+
+async function sendPomodoroNotification(title: string, body: string) {
+  try {
+    let permissionGranted = await isPermissionGranted()
+
+    if (!permissionGranted) {
+      const permission = await requestPermission()
+      permissionGranted = permission === 'granted'
+    }
+
+    if (permissionGranted) {
+      sendNotification({ title, body })
+    }
+  } catch (error) {
+    console.error('发送系统通知失败:', error)
+  }
+}
 
 function loadTasksFromStorage(): FocusTask[] {
   if (typeof localStorage === 'undefined') return []
@@ -241,6 +263,7 @@ function startTicker() {
       if (remaining > 0) return
 
       if (mode.value === 'break') {
+        void sendPomodoroNotification('休息结束', '电量已充满，准备开始工作吧！')
         stopTicker()
         isOvertime.value = false
         overtimeSeconds.value = 0
@@ -260,6 +283,7 @@ function startTicker() {
           timeElapsed.value = 0
         }
       } else {
+        void sendPomodoroNotification('专注完成', '棒极了！要不要休息一下？')
         isOvertime.value = true
         overtimeSeconds.value = 0
         elapsedStartAt = currentNow

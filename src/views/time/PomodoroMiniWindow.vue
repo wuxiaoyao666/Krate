@@ -114,10 +114,7 @@ onUnmounted(() => {
     <div
       @mousedown.left.capture="startWindowDrag"
       class="group flex h-full w-full flex-col items-center justify-center relative border border-white/10 shadow-2xl"
-      :class="[
-        snapshot.isOvertime ? 'bg-rose-950/80 border-rose-500/30' : 'bg-slate-950',
-        'rounded-2xl overflow-hidden',
-      ]"
+      :class="'bg-slate-950 rounded-2xl overflow-hidden'"
     >
       <div class="z-10 flex flex-col items-center gap-1 max-w-[90%] pointer-events-none select-none">
         <div
