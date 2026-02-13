@@ -3,10 +3,18 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "pomodoro-mini"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
     "opener:default",
     "dialog:default",
     "shell:default",

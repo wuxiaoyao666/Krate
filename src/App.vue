@@ -12,10 +12,11 @@ import {
 import Sidebar from './components/Sidebar.vue'
 import { useRoute } from 'vue-router'
 import { useClipboard } from '@/hooks/useClipboard'
-import { onMounted } from 'vue'
+import { computed, onMounted, watchEffect } from 'vue'
 
 // 获取当前路由
 const route = useRoute()
+const isPomodoroMiniRoute = computed(() => route.name === 'time-pomodoro-mini')
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {
@@ -52,6 +53,10 @@ if (import.meta.env.PROD) {
     event.preventDefault()
   })
 }
+
+watchEffect(() => {
+  document.body.style.backgroundColor = isPomodoroMiniRoute.value ? 'transparent' : '#0F172A'
+})
 </script>
 
 <template>
@@ -59,7 +64,11 @@ if (import.meta.env.PROD) {
     <n-global-style />
     <n-message-provider>
       <!--   独立窗口运行   -->
-      <div v-if="route.meta.standalone" class="h-screen w-screen bg-[#0F172A] overflow-hidden">
+      <div
+        v-if="route.meta.standalone"
+        class="h-screen w-screen overflow-hidden"
+        :class="isPomodoroMiniRoute ? 'bg-transparent' : 'bg-[#0F172A]'"
+      >
         <router-view />
       </div>
 
