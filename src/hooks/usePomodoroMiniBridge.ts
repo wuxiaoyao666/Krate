@@ -150,7 +150,7 @@ export async function openPomodoroMiniWindow() {
     shadow: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    center: false,
+    center: true,
     focus: true,
   })
 

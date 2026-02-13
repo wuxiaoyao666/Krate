@@ -90,7 +90,7 @@ watchEffect(() => {
             >
               <div
                 data-tauri-drag-region
-                class="h-8 w-full shrink-0 border-b border-slate-700/40 bg-gradient-to-r from-slate-900/70 to-slate-800/50"
+                class="h-8 w-full shrink-0 border-b border-slate-700/40 bg-linear-to-r from-slate-900/70 to-slate-800/50"
               ></div>
 
               <div class="flex-1 p-8 overflow-y-auto">
