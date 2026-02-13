@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   Activity,
   Add,
@@ -153,6 +153,26 @@ function openMini() {
   void enterMiniWindowMode()
 }
 
+function isEditableTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null
+  if (!element) return false
+  if (element.isContentEditable) return true
+  const tag = element.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+function handleMiniShortcut(event: KeyboardEvent) {
+  const hitMiniShortcut = (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'm'
+  if (!hitMiniShortcut) return
+  if (isEditableTarget(event.target)) return
+
+  const hasFocusContext = currentView.value === 'focus' || activeTaskId.value !== null || isRunning.value
+  if (!hasFocusContext) return
+
+  event.preventDefault()
+  void enterMiniWindowMode()
+}
+
 function handleBottomPrimaryAction() {
   if (activeTaskId.value) {
     startFocus(activeTaskId.value, { autoMini: false })
@@ -169,6 +189,14 @@ function handleTaskPrimaryAction(taskId: number) {
   }
   startFocus(taskId)
 }
+
+onMounted(() => {
+  window.addEventListener('keydown', handleMiniShortcut)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleMiniShortcut)
+})
 </script>
 
 <template>

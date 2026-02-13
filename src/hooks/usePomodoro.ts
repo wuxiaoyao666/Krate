@@ -15,8 +15,7 @@ import {
   type PomodoroViewState,
 } from './usePomodoroMiniBridge'
 
-const TASK_STORAGE_KEY = 'krate.time.pomodoro.tasks.v1'
-const LEGACY_TASK_STORAGE_KEYS = ['krate.aura.tasks.v1']
+const TASK_STORAGE_KEY = 'krate.time.pomodoro.tasks'
 
 const DEFAULT_TIMER_SECONDS = 25 * 60
 const DEFAULT_BREAK_MINUTES = 5
@@ -127,19 +126,7 @@ async function sendPomodoroNotification(title: string, body: string) {
 
 function loadTasksFromStorage(): FocusTask[] {
   if (typeof localStorage === 'undefined') return []
-  const candidateKeys = [TASK_STORAGE_KEY, ...LEGACY_TASK_STORAGE_KEYS]
-
-  let raw: string | null = null
-  let loadedKey: string | null = null
-
-  for (const key of candidateKeys) {
-    const value = localStorage.getItem(key)
-    if (value) {
-      raw = value
-      loadedKey = key
-      break
-    }
-  }
+  const raw = localStorage.getItem(TASK_STORAGE_KEY)
 
   if (!raw) return []
 
@@ -148,13 +135,7 @@ function loadTasksFromStorage(): FocusTask[] {
     if (!Array.isArray(parsed)) return []
 
     const normalized = parsed.map((item, index) => normalizeTask(item, index))
-    const sorted = sortTasks(normalized)
-
-    if (loadedKey && loadedKey !== TASK_STORAGE_KEY) {
-      localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(sorted))
-    }
-
-    return sorted
+    return sortTasks(normalized)
   } catch (error) {
     console.error('读取本地任务失败:', error)
     return []
@@ -424,8 +405,15 @@ async function closeMiniWindowMode(options: { restoreMain?: boolean } = {}) {
 }
 
 function startFocus(taskId?: number, options: { autoMini?: boolean } = {}) {
-  const task = typeof taskId === 'number' ? tasks.value.find((item) => item.id === taskId) : undefined
-  if (task?.isCompleted) return
+  let task = typeof taskId === 'number' ? tasks.value.find((item) => item.id === taskId) : undefined
+
+  // Clicking "run" on a completed task should reopen it first, then start focus.
+  if (task?.isCompleted) {
+    setTaskCompleted(task.id, false)
+    task = tasks.value.find((item) => item.id === taskId)
+  }
+
+  if (typeof taskId === 'number' && !task) return
 
   const { autoMini = true } = options
   const isSameTask = task && task.id === currentTaskId.value
@@ -453,6 +441,7 @@ function startFocus(taskId?: number, options: { autoMini?: boolean } = {}) {
     }
 
     startTicker()
+    currentView.value = 'focus'
 
     if (autoMini) {
       void enterMiniWindowMode()

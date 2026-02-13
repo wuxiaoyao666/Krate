@@ -93,11 +93,20 @@ async function startWindowDrag(event: MouseEvent) {
   await getCurrentWindow().startDragging()
 }
 
+function handleMiniShortcut(event: KeyboardEvent) {
+  const hitMiniShortcut = (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'm'
+  if (!hitMiniShortcut) return
+  event.preventDefault()
+  void expandToMain()
+}
+
 onMounted(async () => {
   snapshot.value = readPomodoroRuntimeSnapshot()
   unlistenRuntime = await listenPomodoroRuntimeSnapshot((nextSnapshot) => {
     snapshot.value = nextSnapshot
   })
+
+  window.addEventListener('keydown', handleMiniShortcut)
 })
 
 onUnmounted(() => {
@@ -106,6 +115,7 @@ onUnmounted(() => {
     unlistenRuntime = null
   }
 
+  window.removeEventListener('keydown', handleMiniShortcut)
 })
 </script>
 
