@@ -29,6 +29,7 @@ tauri-plugin-shell = "2"
 image = "0.25.9"
 tauri-plugin-fs = "2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-notification = "2"
 # 归档相关
 tar = "0.4.44"
 flate2 = "1.1.9"
@@ -42,6 +43,7 @@ bytes = "1.11.1"
 http = "1.4.0"
 hyper-rustls = { version = "0.27.7", features = ["http1", "native-tokio"] }
 rustls = "0.23.36"
+
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
