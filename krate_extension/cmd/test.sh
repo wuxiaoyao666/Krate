@@ -1,1 +1,5 @@
-echo '{"module": "pdf", "operation": "encrypt", "input_path": "/Users/wuyusen/Desktop/test.pdf", "output_path": "/Users/wuyusen/Desktop/test_encrypted.pdf", "password": "123"}' | ./krate_extension-aarch64-apple-darwin
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+uv run python main.py pdf_ops decrypt_pdf '{"input":"/tmp/demo.pdf","output":"/tmp/demo_unlocked.pdf","password":"123"}'
