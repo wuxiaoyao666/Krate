@@ -270,7 +270,7 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           title: 'PDF 加解密',
           icon: renderIcon(PdfIcon),
-          desc: 'PDF 文档添加密码保护或移除密码',
+          desc: 'PDF 文档加解密与 Word 转 PDF',
         },
       },
     ],
