@@ -1,18 +1,34 @@
-# 1. 运行项目
+# Krate 开发说明
 
-1. 在 **krate_extension** 下安装 Python 虚拟环境
-2. 执行
+## Python 扩展（`krate_extension`）
 
-```shell
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+项目已切换为 `uv` 管理，不再使用 `pip install -r requirements.txt`。
+
+### 1) 安装依赖
+
+```bash
+cd krate_extension
+uv sync --group build
 ```
 
-3. 也可以升级已有的依赖
+### 2) 本地调试
 
-```shell
-pip install --upgrade -r requirements.txt
+```bash
+uv run python main.py pdf_ops encrypt_pdf '{"input":"/path/in.pdf","output":"/path/out.pdf","password":"123456"}'
 ```
 
-4. 根据不同操作系统执行 cmd 下面的打包命令
+### 3) 打包 sidecar
 
-5. 将产物放到 **src-tauri/bin** 下
+macOS / Linux:
+
+```bash
+./cmd/package.sh
+```
+
+Windows:
+
+```bat
+cmd\package.bat
+```
+
+将打包产物放到 `src-tauri/bin` 下。
