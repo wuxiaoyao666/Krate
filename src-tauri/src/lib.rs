@@ -1,5 +1,6 @@
 use crate::commands::archive::{create_archive, extract_archive};
 use crate::commands::image::{get_image_info, resize_image};
+use crate::commands::log::{inspect_log_file, read_log_chunk, read_log_tail, search_log_in_file};
 use crate::commands::network::{kill_process, scan_ports};
 use crate::commands::proxy::{proxy_get_status, proxy_start, proxy_stop, ProxyState};
 use crate::commands::system::{get_system_info, SystemState};
@@ -85,6 +86,10 @@ pub fn run() {
             create_archive,
             extract_archive,
             get_system_info,
+            inspect_log_file,
+            read_log_chunk,
+            read_log_tail,
+            search_log_in_file,
             proxy_start,
             proxy_stop,
             proxy_get_status
