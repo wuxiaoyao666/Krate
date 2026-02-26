@@ -105,16 +105,6 @@ export const routes: RouteRecordRaw[] = [
           desc: '自动记录复制历史，支持一键回填',
         },
       },
-      {
-        path: 'log-viewer',
-        name: 'system-log-viewer',
-        component: () => import('@/views/system/LogViewer.vue'),
-        meta: {
-          title: '日志查看器',
-          icon: renderIcon(Terminal),
-          desc: '面向 GB 级日志文件的按需读取与高亮搜索',
-        },
-      },
     ],
   },
   {
