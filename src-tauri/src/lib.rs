@@ -1,6 +1,7 @@
 use crate::commands::archive::{create_archive, extract_archive};
 use crate::commands::image::{get_image_info, resize_image};
 use crate::commands::network::{kill_process, scan_ports};
+use crate::commands::pdf::{decrypt_pdf, encrypt_pdf};
 use crate::commands::proxy::{proxy_get_status, proxy_start, proxy_stop, ProxyState};
 use crate::commands::system::{get_system_info, SystemState};
 use tauri::menu::{Menu, MenuItem};
@@ -70,7 +71,6 @@ pub fn run() {
         })
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -84,6 +84,8 @@ pub fn run() {
             kill_process,
             create_archive,
             extract_archive,
+            encrypt_pdf,
+            decrypt_pdf,
             get_system_info,
             proxy_start,
             proxy_stop,

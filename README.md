@@ -1,34 +1,11 @@
 # Krate 开发说明
 
-## Python 扩展（`krate_extension`）
+## PDF 功能
 
-项目已切换为 `uv` 管理，不再使用 `pip install -r requirements.txt`。
+- 从当前版本开始，`PDF 加密/解密` 已迁移到 Rust（Tauri command）。
+- 前端直接调用：`encrypt_pdf`、`decrypt_pdf`。
+- 运行与打包不再依赖 Python sidecar。
 
-### 1) 安装依赖
+## `krate_extension` 目录
 
-```bash
-cd krate_extension
-uv sync --group build
-```
-
-### 2) 本地调试
-
-```bash
-uv run python main.py pdf_ops encrypt_pdf '{"input":"/path/in.pdf","output":"/path/out.pdf","password":"123456"}'
-```
-
-### 3) 打包 sidecar
-
-macOS / Linux:
-
-```bash
-./cmd/package.sh
-```
-
-Windows:
-
-```bat
-cmd\package.bat
-```
-
-将打包产物放到 `src-tauri/bin` 下。
+- 该目录目前仅保留为历史参考，不参与主应用运行链路。

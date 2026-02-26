@@ -24,17 +24,6 @@
     "notification:default",
     "opener:default",
     "dialog:default",
-    "shell:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "bin/krate_extension",
-          "args": true,
-          "sidecar": true
-        }
-      ]
-    },
     "fs:allow-app-read-recursive",
     "fs:allow-app-write-recursive",
     "clipboard-manager:allow-read-text",
