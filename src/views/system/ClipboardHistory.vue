@@ -51,7 +51,7 @@ const handleClear = () => {
 }
 
 const handleBodyClick = async (item: HistoryItem) => {
-  if (isLongText(item.text)) {
+  if (isLongText(item.previewText)) {
     toggleExpand(item.id)
     return
   }
@@ -59,7 +59,7 @@ const handleBodyClick = async (item: HistoryItem) => {
 }
 
 const bodyTitle = (item: HistoryItem) => {
-  if (isLongText(item.text)) {
+  if (isLongText(item.previewText)) {
     return isExpanded(item.id) ? '点击收起' : '点击展开'
   }
   return '点击复制'
@@ -143,7 +143,7 @@ const formatTime = (ts: number) => {
               <NTag size="small" :bordered="false" class="bg-slate-700/60 text-slate-300">
                 {{ formatTime(item.time) }}
               </NTag>
-              <span class="text-[11px] text-slate-500 shrink-0">{{ item.text.length }} 字符</span>
+              <span class="text-[11px] text-slate-500 shrink-0">{{ item.fullText.length }} 字符</span>
             </div>
 
             <div class="flex items-center gap-1.5 shrink-0">
@@ -151,7 +151,7 @@ const formatTime = (ts: number) => {
                 复制
               </NButton>
               <NButton
-                v-if="isLongText(item.text)"
+                v-if="isLongText(item.previewText)"
                 size="tiny"
                 quaternary
                 @click.stop="toggleExpand(item.id)"
@@ -166,13 +166,13 @@ const formatTime = (ts: number) => {
 
           <div
             class="mt-3 text-sm text-slate-100 font-mono break-words whitespace-pre-wrap leading-relaxed rounded-xl border border-slate-700/40 px-3 py-2 bg-slate-900/25 cursor-pointer relative"
-            :class="{ 'max-h-24 overflow-hidden': !isExpanded(item.id) && isLongText(item.text) }"
+            :class="{ 'max-h-24 overflow-hidden': !isExpanded(item.id) && isLongText(item.previewText) }"
             @click.stop="handleBodyClick(item)"
             :title="bodyTitle(item)"
           >
-            {{ item.text }}
+            {{ item.previewText }}
             <div
-              v-if="!isExpanded(item.id) && isLongText(item.text)"
+              v-if="!isExpanded(item.id) && isLongText(item.previewText)"
               class="absolute bottom-0 left-0 right-0 h-8 bg-linear-to-t from-[#0f172a] to-transparent pointer-events-none"
             />
           </div>
