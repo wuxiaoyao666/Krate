@@ -313,6 +313,16 @@ export const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/game/cow-puzzle',
+    name: 'CowPuzzle',
+    component: () => import('@/views/games/CowPuzzle.vue'),
+    meta: {
+      title: '逻辑放牛',
+      hidden: true,
+      standalone: true,
+    },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/Settings.vue'),

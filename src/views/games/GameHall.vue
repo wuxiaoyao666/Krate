@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { emitTo } from '@tauri-apps/api/event'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { NGrid, NGi, NCard, NButton, NIcon, useMessage } from 'naive-ui'
-import { Flash, PlayFilled, TableSplit, GameConsole } from '@vicons/carbon'
+import { Flash, PlayFilled, TableSplit, GameConsole, Grid } from '@vicons/carbon'
+import { COW_PUZZLE_REFRESH_EVENT } from './cowPuzzleEngine'
 
 const message = useMessage()
 
@@ -36,6 +38,16 @@ const games = [
     width: 1200,
     height: 900,
   },
+  {
+    id: 'cow-puzzle',
+    title: '逻辑放牛',
+    desc: '随机生成的颜色逻辑题，右键落牛，放错即结束',
+    icon: Grid,
+    color: 'text-indigo-400',
+    route: '/game/cow-puzzle',
+    width: 1160,
+    height: 840,
+  },
 ]
 
 const openGameWindow = async (game: any) => {
@@ -45,6 +57,9 @@ const openGameWindow = async (game: any) => {
   const existingWin = await WebviewWindow.getByLabel(label)
   if (existingWin) {
     await existingWin.setFocus()
+    if (game.id === 'cow-puzzle') {
+      await emitTo(label, COW_PUZZLE_REFRESH_EVENT)
+    }
     return
   }
 
