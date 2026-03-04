@@ -24,18 +24,20 @@ const loadingText = ref('')
 // ========== Pack 数据 ==========
 const selectedFiles = ref<string[]>([])
 const packPassword = ref('')
-const compressionLevel = ref<number>(9)
+const compressionLevel = ref<number>(6)
 
 const levelOptions = [
-  { label: '最高压缩', value: 9 },
   { label: '平衡', value: 6 },
-  { label: '最快', value: 1 },
+  { label: '最高压缩', value: 9 },
+  { label: '最快速度', value: 1 },
 ]
 
 // ========== Unpack 数据 ==========
 const archivePath = ref('')
 const extractDir = ref('')
 const unpackPassword = ref('')
+const normalizedPackPassword = computed(() => packPassword.value.trim())
+const normalizedUnpackPassword = computed(() => unpackPassword.value.trim())
 
 // ========== 辅助函数 ==========
 const dirname = (p: string) => {
@@ -75,13 +77,13 @@ const handlePack = async () => {
     if (!savePath) return
 
     loading.value = true
-    loadingText.value = '正在归档中，请稍候...'
+    loadingText.value = normalizedPackPassword.value ? '正在压缩并加密，请稍候...' : '正在压缩打包，请稍候...'
 
     // 调用后端，await 会一直等待直到任务结束
     await invoke('create_archive', {
       inputs: selectedFiles.value,
       outputPath: savePath,
-      password: packPassword.value.trim() || null,
+      password: normalizedPackPassword.value || null,
       gzipLevel: compressionLevel.value,
     })
 
@@ -115,12 +117,12 @@ const handleUnpack = async () => {
 
   try {
     loading.value = true
-    loadingText.value = '正在验证密钥并解压...'
+    loadingText.value = normalizedUnpackPassword.value ? '正在校验密码并解压...' : '正在解压归档...'
 
     await invoke('extract_archive', {
       archivePath: archivePath.value,
       outputDir: extractDir.value,
-      password: unpackPassword.value.trim() || null,
+      password: normalizedUnpackPassword.value || null,
     })
 
     message.success('解压成功！')
@@ -187,9 +189,13 @@ const handleUnpack = async () => {
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="留空则不加密"
+              placeholder="留空只压缩，不加密"
             />
           </div>
+        </div>
+
+        <div class="mb-3 rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
+          设置密码后，归档会在压缩完成后启用基于密码的分块加密；留空时只做压缩打包，速度更快。
         </div>
 
         <div
@@ -267,7 +273,7 @@ const handleUnpack = async () => {
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="若文件已加密则必填"
+              placeholder="如果归档已加密，这里必须填写正确密码"
             />
           </div>
         </div>

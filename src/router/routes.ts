@@ -82,7 +82,7 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           title: '私有归档',
           icon: renderIcon(Package),
-          desc: '打包生成专属 .krate 格式文件',
+          desc: '打包生成可选加密的 .krate 格式文件',
         },
       },
       {

@@ -33,6 +33,10 @@ lopdf = "0.39.0"
 # 归档相关
 tar = "0.4.44"
 flate2 = "1.1.9"
+argon2 = "0.5.3"
+aead = { version = "0.5.2", features = ["alloc", "stream"] }
+chacha20poly1305 = { version = "0.10.1", features = ["stream"] }
+getrandom = "0.4.2"
 # 系统信息
 sysinfo = "0.38.2"
 tokio = { version = "1.49.0", features = ["net", "sync", "time", "io-util", "macros"] }
