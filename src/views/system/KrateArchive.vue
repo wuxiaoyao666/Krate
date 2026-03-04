@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { openPath } from '@tauri-apps/plugin-opener'
 import {
   NButton,
   NCard,
@@ -21,6 +22,7 @@ interface ArchiveProgressPayload {
   stage: string
   message: string
   progress: number
+  currentPath?: string | null
 }
 
 const message = useMessage()
@@ -29,7 +31,9 @@ const loading = ref(false)
 const loadingText = ref('')
 const progress = ref(0)
 const progressStage = ref('')
+const progressCurrentPath = ref('')
 const activeOperation = ref<'pack' | 'extract' | null>(null)
+const lastExtractedDir = ref('')
 
 const selectedFiles = ref<string[]>([])
 const packPassword = ref('')
@@ -46,7 +50,7 @@ const canUnpack = computed(() => !!archivePath.value && !!extractDir.value)
 const progressPercent = computed(() => Math.round(progress.value))
 
 const levelOptions = [
-  { label: '平衡', value: 6 },
+  { label: '平衡（推荐）', value: 6 },
   { label: '最高压缩', value: 9 },
   { label: '最快速度', value: 1 },
 ]
@@ -56,6 +60,7 @@ let unlistenProgress: UnlistenFn | null = null
 const resetProgressState = () => {
   progress.value = 0
   progressStage.value = ''
+  progressCurrentPath.value = ''
   loadingText.value = ''
   activeOperation.value = null
 }
@@ -81,6 +86,16 @@ const addFolder = async () => {
 
 const removeFile = (index: number) => selectedFiles.value.splice(index, 1)
 
+const openExtractedDir = async () => {
+  if (!lastExtractedDir.value) return
+
+  try {
+    await openPath(lastExtractedDir.value)
+  } catch (error: any) {
+    message.error('打开输出目录失败: ' + (error?.message || error))
+  }
+}
+
 const handlePack = async () => {
   if (!selectedFiles.value.length) return
 
@@ -95,6 +110,7 @@ const handlePack = async () => {
     activeOperation.value = 'pack'
     progress.value = 0
     progressStage.value = '准备归档'
+    progressCurrentPath.value = ''
     loadingText.value = normalizedPackPassword.value ? '正在压缩并加密' : '正在压缩打包'
 
     await invoke('create_archive', {
@@ -136,6 +152,7 @@ const handleUnpack = async () => {
     activeOperation.value = 'extract'
     progress.value = 0
     progressStage.value = '读取归档头'
+    progressCurrentPath.value = ''
     loadingText.value = normalizedUnpackPassword.value ? '正在校验密码并解压' : '正在解压归档'
 
     await invoke('extract_archive', {
@@ -144,6 +161,7 @@ const handleUnpack = async () => {
       password: normalizedUnpackPassword.value || null,
     })
 
+    lastExtractedDir.value = extractDir.value
     message.success('解压成功')
   } catch (error: any) {
     message.error('解压失败: ' + (error?.message || error))
@@ -161,6 +179,7 @@ onMounted(async () => {
     progress.value = Math.max(0, Math.min(100, event.payload.progress ?? 0))
     progressStage.value = event.payload.stage || progressStage.value
     loadingText.value = event.payload.message || loadingText.value
+    progressCurrentPath.value = event.payload.currentPath || ''
   })
 })
 
@@ -180,7 +199,12 @@ onBeforeUnmount(() => {
     >
       <div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-2xl">
         <div class="mb-2 text-center text-lg font-bold text-emerald-400">{{ loadingText }}</div>
-        <div class="mb-4 text-center text-xs text-slate-400">{{ progressStage }}</div>
+        <div class="mb-3 text-center text-xs text-slate-400">{{ progressStage }}</div>
+        <div
+          class="mb-4 min-h-10 rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-2 font-mono text-xs text-slate-300"
+        >
+          {{ progressCurrentPath || '正在准备文件列表...' }}
+        </div>
         <NProgress
           type="line"
           status="success"
@@ -192,7 +216,7 @@ onBeforeUnmount(() => {
           processing
         />
         <div class="mt-3 flex items-center justify-between text-xs text-slate-400">
-          <span>大文件处理时长取决于源文件尺寸和压缩级别</span>
+          <span>大文件处理时长取决于文件体积和压缩级别</span>
           <span class="font-mono text-emerald-300">{{ progressPercent }}%</span>
         </div>
       </div>
@@ -324,6 +348,17 @@ onBeforeUnmount(() => {
               show-password-on="click"
               placeholder="如果归档已加密，这里必须填写正确密码"
             />
+          </div>
+
+          <div
+            v-if="lastExtractedDir"
+            class="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3"
+          >
+            <div class="mb-1 text-xs text-emerald-300">最近一次解压输出目录</div>
+            <div class="mb-3 break-all font-mono text-xs text-slate-300">{{ lastExtractedDir }}</div>
+            <NButton size="small" secondary type="success" @click="openExtractedDir">
+              打开输出目录
+            </NButton>
           </div>
         </div>
 

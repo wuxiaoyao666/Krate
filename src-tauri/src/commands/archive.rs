@@ -26,13 +26,7 @@ const MAX_ARGON2_LANES: u32 = 4;
 
 const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
-
-// STREAM-BE32 会从 XChaCha20 的 24 字节 nonce 中占用 5 字节做分块计数，
-// 因此归档头里只需要落盘剩余的 19 字节基础 nonce。
 const STREAM_NONCE_LEN: usize = 19;
-
-// 256 KiB 是尺寸开销和吞吐量之间比较稳的折中：
-// 分块太小会让每块额外 tag/头部占比上升，分块太大又会让流式处理变钝。
 const CHUNK_PLAINTEXT_SIZE: usize = 256 * 1024;
 const CHUNK_LENGTH_BYTES: usize = 4;
 const AEAD_TAG_LEN: usize = 16;
@@ -52,6 +46,7 @@ struct ArchiveProgressPayload {
     stage: String,
     message: String,
     progress: f64,
+    current_path: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -66,6 +61,7 @@ struct ArchiveProgressTracker {
     total_bytes: u64,
     processed_bytes: u64,
     last_emitted_progress: i16,
+    current_path: Option<String>,
 }
 
 struct ProgressReader<'a, R: Read> {
@@ -99,11 +95,22 @@ impl ArchiveProgressTracker {
             total_bytes,
             processed_bytes: 0,
             last_emitted_progress: -1,
+            current_path: None,
         }
     }
 
     fn set_stage(&mut self, window: Option<&Window>, stage: &'static str, message: &'static str) {
         self.stage = stage;
+        self.emit(window, message, true);
+    }
+
+    fn set_current_path(
+        &mut self,
+        window: Option<&Window>,
+        current_path: Option<String>,
+        message: &'static str,
+    ) {
+        self.current_path = current_path;
         self.emit(window, message, true);
     }
 
@@ -118,6 +125,7 @@ impl ArchiveProgressTracker {
     fn finish(&mut self, window: Option<&Window>, stage: &'static str, message: &'static str) {
         self.stage = stage;
         self.processed_bytes = self.total_bytes;
+        self.current_path = None;
         self.emit(window, message, true);
     }
 
@@ -141,6 +149,7 @@ impl ArchiveProgressTracker {
                 stage: self.stage.to_string(),
                 message: message.to_string(),
                 progress,
+                current_path: self.current_path.clone(),
             },
         );
     }
@@ -196,8 +205,8 @@ impl ArchiveHeader {
         })
     }
 
-    // 头部既告诉解包侧如何处理 payload，也作为 AEAD 的 AAD，
-    // 让“格式头 + 密文”绑在一起，防止有人静默篡改元数据。
+    // 头部既负责描述归档格式，也作为 AEAD 的 AAD，
+    // 这样一旦有人篡改加密参数或压缩标记，认证阶段会直接失败。
     fn encoded_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(
             FORMAT_MARKER.len()
@@ -231,8 +240,8 @@ impl ArchiveHeader {
     }
 }
 
-// gzip 输出是连续明文流，这个 writer 负责把它按固定大小切块，再交给 STREAM AEAD。
-// 这样可以一边压缩一边加密，不需要整包读进内存。
+// STREAM AEAD 基于流式分块工作：gzip 连续明文流写入这里后，
+// 会被切成固定大小的块并逐块认证加密，避免整包驻留内存。
 struct EncryptedPayloadWriter<W: Write> {
     inner: W,
     encryptor: Option<ArchiveEncryptor>,
@@ -256,8 +265,6 @@ impl<W: Write> EncryptedPayloadWriter<W> {
         }
     }
 
-    // 每个块的落盘格式：
-    // [1 byte flag][4 bytes ciphertext_len][ciphertext_with_tag]
     fn write_chunk(&mut self, is_last: bool, plaintext: &[u8]) -> io::Result<()> {
         let payload = Payload {
             msg: plaintext,
@@ -346,7 +353,6 @@ impl<W: Write> Write for EncryptedPayloadWriter<W> {
     }
 }
 
-// 读取侧与 writer 对称：逐块读密文、认证、解密，再通过 Read 接口持续吐出明文。
 struct EncryptedPayloadReader<R: Read> {
     inner: R,
     decryptor: Option<ArchiveDecryptor>,
@@ -427,7 +433,6 @@ impl<R: Read> EncryptedPayloadReader<R> {
         Ok(())
     }
 
-    // 先探测首块，把“密码不对/密文损坏”尽量提前暴露出来。
     fn prime(&mut self) -> io::Result<()> {
         if self.buffer.is_empty() && !self.finished {
             self.load_next_chunk()?;
@@ -548,8 +553,8 @@ fn sorted_children(path: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(children)
 }
 
-// 打包阶段的进度按“已读取的源文件字节数”计算。
-// 这样前端看到的是实际工作量，而不是写死的假动画。
+// 打包进度按已读取的源文件字节数推进，同时在切换文件时发出当前路径，
+// 这样前端能展示“正在处理哪个文件”，而不是只有百分比。
 fn append_inputs_to_tar<W: Write>(
     tar: &mut tar::Builder<W>,
     inputs: &[String],
@@ -602,6 +607,12 @@ fn append_path_to_tar<W: Write>(
     }
 
     if metadata.is_file() {
+        tracker.set_current_path(
+            window,
+            Some(source_path.display().to_string()),
+            progress_message,
+        );
+
         let mut header = tar::Header::new_gnu();
         header.set_metadata(&metadata);
         header.set_cksum();
@@ -763,52 +774,50 @@ async fn extract_archive_impl(
     let mut tracker = ArchiveProgressTracker::new("extract", "读取归档头", total_bytes);
     tracker.set_stage(window, "读取归档头", "正在读取归档头");
 
-    {
-        let file = File::open(&archive_path).map_err(|err| err.to_string())?;
-        let buffered = BufReader::new(file);
-        let mut progress_reader = ProgressReader::new(buffered, &mut tracker, window, "正在读取归档头");
+    let file = File::open(&archive_path).map_err(|err| err.to_string())?;
+    let buffered = BufReader::new(file);
+    let mut progress_reader = ProgressReader::new(buffered, &mut tracker, window, "正在读取归档头");
 
-        let mut magic = [0u8; MAGIC_HEADER.len()];
-        if progress_reader.read_exact(&mut magic).is_err() || magic != *MAGIC_HEADER {
-            return Err("文件损坏或格式不正确：无法识别的 Krate 包".to_string());
-        }
+    let mut magic = [0u8; MAGIC_HEADER.len()];
+    if progress_reader.read_exact(&mut magic).is_err() || magic != *MAGIC_HEADER {
+        return Err("文件损坏或格式不正确：无法识别的 Krate 包".to_string());
+    }
 
-        let mut marker = [0u8; FORMAT_MARKER.len()];
+    let mut marker = [0u8; FORMAT_MARKER.len()];
+    progress_reader
+        .read_exact(&mut marker)
+        .map_err(|err| err.to_string())?;
+
+    if marker != *FORMAT_MARKER {
+        return Err("不支持的 .krate 版本，请使用当前版本重新生成归档".to_string());
+    }
+
+    let header = read_archive_header(&mut progress_reader)?;
+
+    if let Some(metadata) = header.encryption.as_ref() {
+        let password = normalized_password
+            .as_deref()
+            .ok_or("该 .krate 归档已加密，请输入密码后再解压".to_string())?;
+        let key = derive_archive_key(password, metadata)?;
+        progress_reader.message = "正在校验密码并解压";
         progress_reader
-            .read_exact(&mut marker)
-            .map_err(|err| err.to_string())?;
+            .tracker
+            .set_stage(progress_reader.window, "正在校验密码并解压", "正在校验密码并解压");
 
-        if marker != *FORMAT_MARKER {
-            return Err("不支持的 .krate 版本，请使用当前版本重新生成归档".to_string());
-        }
-
-        let header = read_archive_header(&mut progress_reader)?;
-
-        if let Some(metadata) = header.encryption.as_ref() {
-            let password = normalized_password
-                .as_deref()
-                .ok_or("该 .krate 归档已加密，请输入密码后再解压".to_string())?;
-            let key = derive_archive_key(password, metadata)?;
-            progress_reader.message = "正在校验密码并解压";
-            progress_reader
-                .tracker
-                .set_stage(progress_reader.window, "正在校验密码并解压", "正在校验密码并解压");
-
-            let mut payload_reader = EncryptedPayloadReader::new(
-                progress_reader,
-                key,
-                metadata.stream_nonce,
-                header.aad_bytes(),
-            );
-            payload_reader.prime().map_err(|err| err.to_string())?;
-            extract_archive_contents(payload_reader, &output_dir)?;
-        } else {
-            progress_reader.message = "正在解压归档";
-            progress_reader
-                .tracker
-                .set_stage(progress_reader.window, "正在解压归档", "正在解压归档");
-            extract_archive_contents(progress_reader, &output_dir)?;
-        }
+        let mut payload_reader = EncryptedPayloadReader::new(
+            progress_reader,
+            key,
+            metadata.stream_nonce,
+            header.aad_bytes(),
+        );
+        payload_reader.prime().map_err(|err| err.to_string())?;
+        extract_archive_contents(payload_reader, &output_dir)?;
+    } else {
+        progress_reader.message = "正在解压归档";
+        progress_reader
+            .tracker
+            .set_stage(progress_reader.window, "正在解压归档", "正在解压归档");
+        extract_archive_contents(progress_reader, &output_dir)?;
     }
 
     tracker.finish(window, "解压完成", "解压完成");
