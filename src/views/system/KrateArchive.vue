@@ -1,30 +1,49 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import {
   NButton,
-  NIcon,
   NCard,
+  NIcon,
+  NInput,
   NList,
   NListItem,
-  useMessage,
-  NInput,
+  NProgress,
   NSelect,
-  NSpin,
+  useMessage,
 } from 'naive-ui'
-import { Package, Deploy, DocumentAdd, FolderAdd, Close, FolderOpen } from '@vicons/carbon'
+import { Close, Deploy, DocumentAdd, FolderAdd, FolderOpen, Package } from '@vicons/carbon'
+
+interface ArchiveProgressPayload {
+  operation: 'pack' | 'extract'
+  stage: string
+  message: string
+  progress: number
+}
 
 const message = useMessage()
 
-// ========== 状态 ==========
 const loading = ref(false)
 const loadingText = ref('')
+const progress = ref(0)
+const progressStage = ref('')
+const activeOperation = ref<'pack' | 'extract' | null>(null)
 
-// ========== Pack 数据 ==========
 const selectedFiles = ref<string[]>([])
 const packPassword = ref('')
 const compressionLevel = ref<number>(6)
+
+const archivePath = ref('')
+const extractDir = ref('')
+const unpackPassword = ref('')
+
+const normalizedPackPassword = computed(() => packPassword.value.trim())
+const normalizedUnpackPassword = computed(() => unpackPassword.value.trim())
+const canPack = computed(() => selectedFiles.value.length > 0)
+const canUnpack = computed(() => !!archivePath.value && !!extractDir.value)
+const progressPercent = computed(() => Math.round(progress.value))
 
 const levelOptions = [
   { label: '平衡', value: 6 },
@@ -32,18 +51,18 @@ const levelOptions = [
   { label: '最快速度', value: 1 },
 ]
 
-// ========== Unpack 数据 ==========
-const archivePath = ref('')
-const extractDir = ref('')
-const unpackPassword = ref('')
-const normalizedPackPassword = computed(() => packPassword.value.trim())
-const normalizedUnpackPassword = computed(() => unpackPassword.value.trim())
+let unlistenProgress: UnlistenFn | null = null
 
-// ========== 辅助函数 ==========
-const dirname = (p: string) => {
-  // 简单的跨平台获取目录名
-  const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
-  return i >= 0 ? p.slice(0, i) : ''
+const resetProgressState = () => {
+  progress.value = 0
+  progressStage.value = ''
+  loadingText.value = ''
+  activeOperation.value = null
+}
+
+const dirname = (targetPath: string) => {
+  const index = Math.max(targetPath.lastIndexOf('/'), targetPath.lastIndexOf('\\'))
+  return index >= 0 ? targetPath.slice(0, index) : ''
 }
 
 const addFiles = async () => {
@@ -62,10 +81,6 @@ const addFolder = async () => {
 
 const removeFile = (index: number) => selectedFiles.value.splice(index, 1)
 
-const canPack = computed(() => selectedFiles.value.length > 0)
-const canUnpack = computed(() => !!archivePath.value && !!extractDir.value)
-
-// ========== Pack 逻辑 ==========
 const handlePack = async () => {
   if (!selectedFiles.value.length) return
 
@@ -77,9 +92,11 @@ const handlePack = async () => {
     if (!savePath) return
 
     loading.value = true
-    loadingText.value = normalizedPackPassword.value ? '正在压缩并加密，请稍候...' : '正在压缩打包，请稍候...'
+    activeOperation.value = 'pack'
+    progress.value = 0
+    progressStage.value = '准备归档'
+    loadingText.value = normalizedPackPassword.value ? '正在压缩并加密' : '正在压缩打包'
 
-    // 调用后端，await 会一直等待直到任务结束
     await invoke('create_archive', {
       inputs: selectedFiles.value,
       outputPath: savePath,
@@ -87,18 +104,17 @@ const handlePack = async () => {
       gzipLevel: compressionLevel.value,
     })
 
-    message.success('打包成功！已生成 .krate 文件')
-    // 清理状态
+    message.success('打包成功，已生成 .krate 文件')
     selectedFiles.value = []
     packPassword.value = ''
-  } catch (e: any) {
-    message.error('打包失败: ' + (e?.message || e))
+  } catch (error: any) {
+    message.error('打包失败: ' + (error?.message || error))
   } finally {
     loading.value = false
+    resetProgressState()
   }
 }
 
-// ========== Unpack 逻辑 ==========
 const selectArchive = async () => {
   const selected = await open({ filters: [{ name: 'Krate Package', extensions: ['krate'] }] })
   if (selected && typeof selected === 'string') {
@@ -117,7 +133,10 @@ const handleUnpack = async () => {
 
   try {
     loading.value = true
-    loadingText.value = normalizedUnpackPassword.value ? '正在校验密码并解压...' : '正在解压归档...'
+    activeOperation.value = 'extract'
+    progress.value = 0
+    progressStage.value = '读取归档头'
+    loadingText.value = normalizedUnpackPassword.value ? '正在校验密码并解压' : '正在解压归档'
 
     await invoke('extract_archive', {
       archivePath: archivePath.value,
@@ -125,71 +144,101 @@ const handleUnpack = async () => {
       password: normalizedUnpackPassword.value || null,
     })
 
-    message.success('解压成功！')
-  } catch (e: any) {
-    message.error('解压失败: ' + (e?.message || e))
+    message.success('解压成功')
+  } catch (error: any) {
+    message.error('解压失败: ' + (error?.message || error))
   } finally {
     loading.value = false
+    resetProgressState()
   }
 }
+
+onMounted(async () => {
+  unlistenProgress = await listen<ArchiveProgressPayload>('archive://progress', (event) => {
+    if (!loading.value || !activeOperation.value) return
+    if (event.payload.operation !== activeOperation.value) return
+
+    progress.value = Math.max(0, Math.min(100, event.payload.progress ?? 0))
+    progressStage.value = event.payload.stage || progressStage.value
+    loadingText.value = event.payload.message || loadingText.value
+  })
+})
+
+onBeforeUnmount(() => {
+  if (unlistenProgress) {
+    unlistenProgress()
+    unlistenProgress = null
+  }
+})
 </script>
 
 <template>
-  <div class="h-full flex flex-col p-6 space-y-4 relative">
+  <div class="relative flex h-full flex-col space-y-4 p-6">
     <div
       v-if="loading"
-      class="absolute inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl select-none"
+      class="absolute inset-0 z-50 flex select-none flex-col items-center justify-center rounded-xl bg-slate-900/80 backdrop-blur-sm"
     >
-      <div
-        class="bg-slate-800 p-8 rounded-2xl border border-slate-700 shadow-2xl flex flex-col items-center"
-      >
-        <NSpin size="large" />
-        <div class="mt-4 text-emerald-400 font-bold text-lg animate-pulse">{{ loadingText }}</div>
-        <div class="mt-2 text-xs text-slate-500">大文件处理可能需要一些时间</div>
+      <div class="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-2xl">
+        <div class="mb-2 text-center text-lg font-bold text-emerald-400">{{ loadingText }}</div>
+        <div class="mb-4 text-center text-xs text-slate-400">{{ progressStage }}</div>
+        <NProgress
+          type="line"
+          status="success"
+          :percentage="progressPercent"
+          :show-indicator="false"
+          :height="14"
+          rail-color="rgba(51, 65, 85, 0.85)"
+          color="#34d399"
+          processing
+        />
+        <div class="mt-3 flex items-center justify-between text-xs text-slate-400">
+          <span>大文件处理时长取决于源文件尺寸和压缩级别</span>
+          <span class="font-mono text-emerald-300">{{ progressPercent }}%</span>
+        </div>
       </div>
     </div>
 
-    <div class="flex justify-between items-center">
-      <h2 class="text-xl font-bold text-slate-100 flex items-center gap-2">
+    <div class="flex items-center justify-between">
+      <h2 class="flex items-center gap-2 text-xl font-bold text-slate-100">
         <n-icon class="text-emerald-400"><Package /></n-icon>
         Krate 私有归档
       </h2>
     </div>
 
-    <div class="flex-1 grid grid-cols-2 gap-6 min-h-0">
+    <div class="grid min-h-0 flex-1 grid-cols-2 gap-6">
       <NCard
         title="创建归档"
-        class="bg-slate-800/50 border-slate-700 flex flex-col h-full"
+        class="flex h-full flex-col border-slate-700 bg-slate-800/50"
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
-        <div class="flex gap-2 mb-4">
+        <div class="mb-4 flex gap-2">
           <NButton dashed class="flex-1" @click="addFiles">
-            <template #icon
-              ><NIcon><DocumentAdd /></NIcon
-            ></template>
+            <template #icon>
+              <NIcon><DocumentAdd /></NIcon>
+            </template>
             添加文件
           </NButton>
           <NButton dashed class="flex-1" @click="addFolder">
-            <template #icon
-              ><NIcon><FolderAdd /></NIcon
-            ></template>
+            <template #icon>
+              <NIcon><FolderAdd /></NIcon>
+            </template>
             添加文件夹
           </NButton>
         </div>
 
-        <div class="flex gap-3 mb-3">
+        <div class="mb-3 flex gap-3">
           <div class="flex-1">
-            <div class="text-xs text-slate-400 mb-1">压缩等级</div>
+            <div class="mb-1 text-xs text-slate-400">压缩等级</div>
             <NSelect v-model:value="compressionLevel" :options="levelOptions" size="small" />
           </div>
-          <div class="flex-2">
-            <div class="text-xs text-slate-400 mb-1">密码（可选）</div>
+          <div class="flex-[2]">
+            <div class="mb-1 text-xs text-slate-400">密码（可选）</div>
             <NInput
               v-model:value="packPassword"
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="留空只压缩，不加密"
+              placeholder="留空则只压缩打包，不启用加密"
             />
           </div>
         </div>
@@ -199,33 +248,33 @@ const handleUnpack = async () => {
         </div>
 
         <div
-          class="flex-1 overflow-y-auto bg-slate-900/30 rounded border border-slate-700/50 p-2 custom-scrollbar"
+          class="custom-scrollbar flex-1 overflow-y-auto rounded border border-slate-700/50 bg-slate-900/30 p-2"
         >
           <NList v-if="selectedFiles.length > 0">
             <NListItem v-for="(file, index) in selectedFiles" :key="file">
-              <div class="flex justify-between items-center group">
-                <span class="text-xs text-slate-300 truncate mr-2 font-mono">{{ file }}</span>
+              <div class="group flex items-center justify-between">
+                <span class="mr-2 truncate font-mono text-xs text-slate-300">{{ file }}</span>
                 <NButton
                   size="tiny"
                   quaternary
                   type="error"
-                  @click="removeFile(index)"
                   class="opacity-0 group-hover:opacity-100"
+                  @click="removeFile(index)"
                 >
-                  <template #icon
-                    ><NIcon><Close /></NIcon
-                  ></template>
+                  <template #icon>
+                    <NIcon><Close /></NIcon>
+                  </template>
                 </NButton>
               </div>
             </NListItem>
           </NList>
-          <div v-else class="h-full flex items-center justify-center text-slate-600 text-sm">
+          <div v-else class="flex h-full items-center justify-center text-sm text-slate-600">
             请添加文件或文件夹
           </div>
         </div>
 
         <div class="mt-4">
-          <NButton type="primary" block @click="handlePack" :disabled="!canPack || loading">
+          <NButton type="primary" block :disabled="!canPack || loading" @click="handlePack">
             生成 .krate 包
           </NButton>
         </div>
@@ -233,36 +282,36 @@ const handleUnpack = async () => {
 
       <NCard
         title="还原归档"
-        class="bg-slate-800/50 border-slate-700"
+        class="border-slate-700 bg-slate-800/50"
         content-style="display: flex; flex-direction: column; height: 100%;"
       >
-        <div class="flex-1 flex flex-col justify-center space-y-6 px-4">
+        <div class="flex flex-1 flex-col justify-center space-y-6 px-4">
           <div
-            class="border-2 border-dashed border-slate-700 rounded-xl h-32 flex flex-col items-center justify-center cursor-pointer hover:border-emerald-500/50 transition-colors"
+            class="flex h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-700 transition-colors hover:border-emerald-500/50"
             @click="selectArchive"
           >
             <div v-if="!archivePath" class="text-center text-slate-500">
               <NIcon size="40" class="mb-2"><FolderOpen /></NIcon>
               <div>点击选择 .krate 文件</div>
             </div>
-            <div v-else class="text-center px-4">
-              <NIcon size="32" class="text-emerald-500 mb-1"><Package /></NIcon>
-              <div class="text-xs text-slate-300 break-all">{{ archivePath }}</div>
+            <div v-else class="px-4 text-center">
+              <NIcon size="32" class="mb-1 text-emerald-500"><Package /></NIcon>
+              <div class="break-all text-xs text-slate-300">{{ archivePath }}</div>
             </div>
           </div>
 
           <div class="space-y-2">
             <div class="text-xs text-slate-400">解压位置</div>
             <NInput
-              size="small"
               v-model:value="extractDir"
+              size="small"
               placeholder="默认解压到同级目录"
               readonly
               @click="selectExtractDir"
             >
-              <template #suffix
-                ><NIcon><FolderOpen /></NIcon
-              ></template>
+              <template #suffix>
+                <NIcon><FolderOpen /></NIcon>
+              </template>
             </NInput>
           </div>
 
@@ -283,12 +332,12 @@ const handleUnpack = async () => {
             type="success"
             secondary
             block
-            @click="handleUnpack"
             :disabled="!canUnpack || loading"
+            @click="handleUnpack"
           >
-            <template #icon
-              ><NIcon><Deploy /></NIcon
-            ></template>
+            <template #icon>
+              <NIcon><Deploy /></NIcon>
+            </template>
             开始解压
           </NButton>
         </div>
@@ -296,4 +345,3 @@ const handleUnpack = async () => {
     </div>
   </div>
 </template>
-

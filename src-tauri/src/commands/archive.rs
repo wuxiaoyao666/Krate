@@ -8,51 +8,73 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::path::Path;
-use tauri::command;
+use std::path::{Path, PathBuf};
+use tauri::{Emitter, Window, command};
 
-// 文件头布局:
-// 1. MAGIC_HEADER: 标识这是 Krate 归档
-// 2. FORMAT_MARKER: 标识当前归档格式版本
-// 3. flags/compression/可选加密参数
-// 4. payload: gzip(tar(...)) 或 encrypted(gzip(tar(...)))
 const MAGIC_HEADER: &[u8; 9] = b"KRATE_PKG";
 const FORMAT_MARKER: &[u8; 4] = b"V002";
 
 const FLAG_ENCRYPTED: u8 = 0b0000_0001;
 const COMPRESSION_GZIP: u8 = 1;
 
-// 默认压缩级别选 6，是压缩率和速度之间更均衡的取值。
 const DEFAULT_GZIP_LEVEL: u32 = 6;
-// Argon2 参数默认偏保守，目标是明显提升抗暴力破解能力，
-// 同时避免桌面端打包/解包时出现过于夸张的等待。
 const DEFAULT_ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 const DEFAULT_ARGON2_ITERATIONS: u32 = 2;
 const MAX_ARGON2_LANES: u32 = 4;
 
 const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
-// STREAM-BE32 会从 XChaCha20 的 24 字节 nonce 中占用 5 字节做计数器和 last 标记，
-// 因此我们只需要持久化剩余的 19 字节“基础 nonce”。
+
+// STREAM-BE32 会从 XChaCha20 的 24 字节 nonce 中占用 5 字节做分块计数，
+// 因此归档头里只需要落盘剩余的 19 字节基础 nonce。
 const STREAM_NONCE_LEN: usize = 19;
-// 分块大小决定了性能和额外开销:
-// - 块越大，认证 tag 和分块头占比越低
-// - 块越小，流式处理更细，但开销更高
-// 这里取 256 KiB，足够大，且不会让内存占用失控。
+
+// 256 KiB 是尺寸开销和吞吐量之间比较稳的折中：
+// 分块太小会让每块额外 tag/头部占比上升，分块太大又会让流式处理变钝。
 const CHUNK_PLAINTEXT_SIZE: usize = 256 * 1024;
 const CHUNK_LENGTH_BYTES: usize = 4;
 const AEAD_TAG_LEN: usize = 16;
 const CHUNK_FLAG_NEXT: u8 = 0;
 const CHUNK_FLAG_LAST: u8 = 1;
 
+const ARCHIVE_PROGRESS_EVENT: &str = "archive://progress";
+
 type ArchiveCipher = XChaCha20Poly1305;
 type ArchiveEncryptor = EncryptorBE32<ArchiveCipher>;
 type ArchiveDecryptor = DecryptorBE32<ArchiveCipher>;
 
-// 加密参数直接写入归档头，保证解包时可以独立恢复密钥派生上下文。
-// 其中 salt 和 stream_nonce 每个归档随机生成一次。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArchiveProgressPayload {
+    operation: String,
+    stage: String,
+    message: String,
+    progress: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct InputStats {
+    total_bytes: u64,
+    total_files: u64,
+}
+
+struct ArchiveProgressTracker {
+    operation: &'static str,
+    stage: &'static str,
+    total_bytes: u64,
+    processed_bytes: u64,
+    last_emitted_progress: i16,
+}
+
+struct ProgressReader<'a, R: Read> {
+    inner: R,
+    tracker: &'a mut ArchiveProgressTracker,
+    window: Option<&'a Window>,
+    message: &'static str,
+}
+
 #[derive(Clone, Debug)]
 struct EncryptionMetadata {
     memory_kib: u32,
@@ -69,8 +91,89 @@ struct ArchiveHeader {
     encryption: Option<EncryptionMetadata>,
 }
 
+impl ArchiveProgressTracker {
+    fn new(operation: &'static str, stage: &'static str, total_bytes: u64) -> Self {
+        Self {
+            operation,
+            stage,
+            total_bytes,
+            processed_bytes: 0,
+            last_emitted_progress: -1,
+        }
+    }
+
+    fn set_stage(&mut self, window: Option<&Window>, stage: &'static str, message: &'static str) {
+        self.stage = stage;
+        self.emit(window, message, true);
+    }
+
+    fn advance_bytes(&mut self, window: Option<&Window>, bytes: u64, message: &'static str) {
+        self.processed_bytes = self.processed_bytes.saturating_add(bytes);
+        if self.total_bytes > 0 {
+            self.processed_bytes = self.processed_bytes.min(self.total_bytes);
+        }
+        self.emit(window, message, false);
+    }
+
+    fn finish(&mut self, window: Option<&Window>, stage: &'static str, message: &'static str) {
+        self.stage = stage;
+        self.processed_bytes = self.total_bytes;
+        self.emit(window, message, true);
+    }
+
+    fn emit(&mut self, window: Option<&Window>, message: &'static str, force: bool) {
+        let progress = if self.total_bytes == 0 {
+            if force { 100.0 } else { 0.0 }
+        } else {
+            (self.processed_bytes as f64 / self.total_bytes as f64 * 100.0).clamp(0.0, 100.0)
+        };
+        let rounded = progress.floor() as i16;
+
+        if !force && rounded == self.last_emitted_progress {
+            return;
+        }
+
+        self.last_emitted_progress = rounded;
+        emit_archive_progress(
+            window,
+            ArchiveProgressPayload {
+                operation: self.operation.to_string(),
+                stage: self.stage.to_string(),
+                message: message.to_string(),
+                progress,
+            },
+        );
+    }
+}
+
+impl<'a, R: Read> ProgressReader<'a, R> {
+    fn new(
+        inner: R,
+        tracker: &'a mut ArchiveProgressTracker,
+        window: Option<&'a Window>,
+        message: &'static str,
+    ) -> Self {
+        Self {
+            inner,
+            tracker,
+            window,
+            message,
+        }
+    }
+}
+
+impl<R: Read> Read for ProgressReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        if read > 0 {
+            self.tracker
+                .advance_bytes(self.window, read as u64, self.message);
+        }
+        Ok(read)
+    }
+}
+
 impl ArchiveHeader {
-    // 无密码时只做 tar + gzip，不启用加密。
     fn new_plain() -> Self {
         Self {
             flags: 0,
@@ -79,8 +182,6 @@ impl ArchiveHeader {
         }
     }
 
-    // 有密码时，归档头中写入随机 salt 和基础 nonce。
-    // 真正的对称密钥不落盘，只能由密码重新派生。
     fn new_encrypted() -> Result<Self, String> {
         Ok(Self {
             flags: FLAG_ENCRYPTED,
@@ -95,9 +196,8 @@ impl ArchiveHeader {
         })
     }
 
-    // 归档头的序列化结果同时承担两件事:
-    // 1. 告诉解包端如何处理 payload
-    // 2. 作为 AEAD 的 AAD，绑定头部和密文，防止头部被静默篡改
+    // 头部既告诉解包侧如何处理 payload，也作为 AEAD 的 AAD，
+    // 让“格式头 + 密文”绑在一起，防止有人静默篡改元数据。
     fn encoded_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(
             FORMAT_MARKER.len()
@@ -123,8 +223,6 @@ impl ArchiveHeader {
         bytes
     }
 
-    // AAD 使用 “magic + header bytes”，这样只要头部任何字段被改动，
-    // 后续解密认证就会失败。
     fn aad_bytes(&self) -> Vec<u8> {
         let mut aad = Vec::with_capacity(MAGIC_HEADER.len() + self.encoded_bytes().len());
         aad.extend_from_slice(MAGIC_HEADER);
@@ -133,8 +231,8 @@ impl ArchiveHeader {
     }
 }
 
-// gzip 输出的是连续字节流，这个 writer 负责把它切成固定大小分块，
-// 再逐块喂给 STREAM AEAD 做认证加密。
+// gzip 输出是连续明文流，这个 writer 负责把它按固定大小切块，再交给 STREAM AEAD。
+// 这样可以一边压缩一边加密，不需要整包读进内存。
 struct EncryptedPayloadWriter<W: Write> {
     inner: W,
     encryptor: Option<ArchiveEncryptor>,
@@ -158,10 +256,8 @@ impl<W: Write> EncryptedPayloadWriter<W> {
         }
     }
 
-    // 每个块的落盘格式:
+    // 每个块的落盘格式：
     // [1 byte flag][4 bytes ciphertext_len][ciphertext_with_tag]
-    //
-    // flag 区分普通块和最后一块，避免解包端无法识别流尾。
     fn write_chunk(&mut self, is_last: bool, plaintext: &[u8]) -> io::Result<()> {
         let payload = Payload {
             msg: plaintext,
@@ -194,12 +290,10 @@ impl<W: Write> EncryptedPayloadWriter<W> {
         Ok(())
     }
 
-    // 将满块 buffer 取出并重建一个新 buffer，避免重复分配大块内存。
     fn take_buffer(&mut self) -> Vec<u8> {
         std::mem::replace(&mut self.buffer, Vec::with_capacity(CHUNK_PLAINTEXT_SIZE))
     }
 
-    // 流结束时必须显式写出最后一块，否则 STREAM 无法生成 final block 标记。
     fn finish(mut self) -> io::Result<W> {
         if !self.finished {
             self.finished = true;
@@ -222,7 +316,6 @@ impl<W: Write> Write for EncryptedPayloadWriter<W> {
 
         let original_len = buf.len();
 
-        // 先尝试填满上一次残留的半块。
         if !self.buffer.is_empty() {
             let needed = CHUNK_PLAINTEXT_SIZE - self.buffer.len();
             let take = needed.min(buf.len());
@@ -235,14 +328,12 @@ impl<W: Write> Write for EncryptedPayloadWriter<W> {
             }
         }
 
-        // 对后续完整块直接加密写出，避免不必要的中间复制。
         while buf.len() >= CHUNK_PLAINTEXT_SIZE {
             let (chunk, rest) = buf.split_at(CHUNK_PLAINTEXT_SIZE);
             self.write_chunk(false, chunk)?;
             buf = rest;
         }
 
-        // 剩余不足一块的内容暂存，等待后续 write 或 finish。
         if !buf.is_empty() {
             self.buffer.extend_from_slice(buf);
         }
@@ -255,8 +346,7 @@ impl<W: Write> Write for EncryptedPayloadWriter<W> {
     }
 }
 
-// 解包时与 EncryptedPayloadWriter 反向对称:
-// 从磁盘读出块头和密文，逐块认证解密，再按 Read 接口连续吐出明文。
+// 读取侧与 writer 对称：逐块读密文、认证、解密，再通过 Read 接口持续吐出明文。
 struct EncryptedPayloadReader<R: Read> {
     inner: R,
     decryptor: Option<ArchiveDecryptor>,
@@ -282,8 +372,6 @@ impl<R: Read> EncryptedPayloadReader<R> {
         }
     }
 
-    // 一次加载一个完整密文块并认证解密。
-    // 任何密码错误、头部篡改、密文改动，都会在这里失败。
     fn load_next_chunk(&mut self) -> io::Result<()> {
         let mut flag = [0u8; 1];
         self.inner.read_exact(&mut flag).map_err(|err| {
@@ -333,19 +421,13 @@ impl<R: Read> EncryptedPayloadReader<R> {
                 ))
             }
         }
-        .map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "归档解密失败，密码错误或文件已损坏",
-            )
-        })?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "归档解密失败，密码错误或文件已损坏"))?;
 
         self.offset = 0;
         Ok(())
     }
 
-    // 解包前先探测第一块，尽早把“密码错误/文件损坏”暴露出来，
-    // 避免错误被 tar/gzip 包装成不直观的上层报错。
+    // 先探测首块，把“密码不对/密文损坏”尽量提前暴露出来。
     fn prime(&mut self) -> io::Result<()> {
         if self.buffer.is_empty() && !self.finished {
             self.load_next_chunk()?;
@@ -360,7 +442,6 @@ impl<R: Read> Read for EncryptedPayloadReader<R> {
             return Ok(0);
         }
 
-        // 当前明文块已经消费完时，再去加载下一块。
         if self.offset >= self.buffer.len() {
             if self.finished {
                 return Ok(0);
@@ -380,7 +461,12 @@ impl<R: Read> Read for EncryptedPayloadReader<R> {
     }
 }
 
-// 前端传空串时统一视为“没有密码”，避免不同层重复判断空白字符。
+fn emit_archive_progress(window: Option<&Window>, payload: ArchiveProgressPayload) {
+    if let Some(window) = window {
+        let _ = window.emit(ARCHIVE_PROGRESS_EVENT, payload);
+    }
+}
+
 fn normalized_password(password: Option<String>) -> Option<String> {
     password.and_then(|value| {
         let trimmed = value.trim().to_string();
@@ -392,7 +478,6 @@ fn normalized_password(password: Option<String>) -> Option<String> {
     })
 }
 
-// Argon2 并行度最多跟 CPU 走，但限制在 4 以内，避免桌面端开销过高。
 fn default_argon2_lanes() -> u32 {
     std::thread::available_parallelism()
         .map(|parallelism| parallelism.get() as u32)
@@ -400,15 +485,12 @@ fn default_argon2_lanes() -> u32 {
         .clamp(1, MAX_ARGON2_LANES)
 }
 
-// 所有随机数据都来自系统 RNG，用于 salt / nonce，不能复用或硬编码。
 fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes).map_err(|err| format!("生成归档随机参数失败: {}", err))?;
     Ok(bytes)
 }
 
-// 使用 Argon2id 从用户密码派生对称密钥。
-// 这样密码本身不直接参与 AEAD，且能显著提高离线暴力破解成本。
 fn derive_archive_key(password: &str, metadata: &EncryptionMetadata) -> Result<[u8; KEY_LEN], String> {
     let params = Params::new(
         metadata.memory_kib,
@@ -428,37 +510,121 @@ fn derive_archive_key(password: &str, metadata: &EncryptionMetadata) -> Result<[
     Ok(key)
 }
 
-// 将输入文件/目录追加到 tar 中。
-// 当前仍保留原有行为: 目录递归打包，单文件按文件名写入。
-fn append_inputs_to_tar<W: Write>(tar: &mut tar::Builder<W>, inputs: Vec<String>) -> Result<(), String> {
-    for path_str in inputs {
-        let path = Path::new(&path_str);
-        let name = path.file_name().ok_or("无效的文件路径")?;
+fn collect_input_stats(inputs: &[String]) -> Result<InputStats, String> {
+    let mut stats = InputStats::default();
 
-        if path.is_dir() {
-            tar.append_dir_all(name, path).map_err(|err| err.to_string())?;
-        } else {
-            let mut file = File::open(path).map_err(|err| err.to_string())?;
-            tar.append_file(name, &mut file).map_err(|err| err.to_string())?;
+    for path_str in inputs {
+        collect_path_stats(Path::new(path_str), &mut stats)?;
+    }
+
+    Ok(stats)
+}
+
+fn collect_path_stats(path: &Path, stats: &mut InputStats) -> Result<(), String> {
+    let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+
+    if metadata.is_file() {
+        stats.total_bytes = stats.total_bytes.saturating_add(metadata.len());
+        stats.total_files = stats.total_files.saturating_add(1);
+        return Ok(());
+    }
+
+    if metadata.is_dir() {
+        for child in sorted_children(path)? {
+            collect_path_stats(&child, stats)?;
         }
+        return Ok(());
+    }
+
+    Err(format!("不支持归档的路径类型: {}", path.display()))
+}
+
+fn sorted_children(path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut children = fs::read_dir(path)
+        .map_err(|err| err.to_string())?
+        .map(|entry| entry.map(|child| child.path()).map_err(|err| err.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    children.sort();
+    Ok(children)
+}
+
+// 打包阶段的进度按“已读取的源文件字节数”计算。
+// 这样前端看到的是实际工作量，而不是写死的假动画。
+fn append_inputs_to_tar<W: Write>(
+    tar: &mut tar::Builder<W>,
+    inputs: &[String],
+    tracker: &mut ArchiveProgressTracker,
+    window: Option<&Window>,
+    progress_message: &'static str,
+) -> Result<(), String> {
+    for path_str in inputs {
+        let path = Path::new(path_str);
+        let archive_root = path
+            .file_name()
+            .map(PathBuf::from)
+            .ok_or_else(|| format!("无效的归档输入路径: {}", path.display()))?;
+        append_path_to_tar(tar, path, &archive_root, tracker, window, progress_message)?;
     }
 
     Ok(())
 }
 
-// 写入 Krate 头部，并返回对应的 AAD。
+fn append_path_to_tar<W: Write>(
+    tar: &mut tar::Builder<W>,
+    source_path: &Path,
+    archive_path: &Path,
+    tracker: &mut ArchiveProgressTracker,
+    window: Option<&Window>,
+    progress_message: &'static str,
+) -> Result<(), String> {
+    let metadata = fs::metadata(source_path).map_err(|err| err.to_string())?;
+
+    if metadata.is_dir() {
+        tar.append_dir(archive_path, source_path)
+            .map_err(|err| err.to_string())?;
+
+        for child in sorted_children(source_path)? {
+            let child_name = child
+                .file_name()
+                .map(PathBuf::from)
+                .ok_or_else(|| format!("无效的归档路径: {}", child.display()))?;
+            append_path_to_tar(
+                tar,
+                &child,
+                &archive_path.join(child_name),
+                tracker,
+                window,
+                progress_message,
+            )?;
+        }
+
+        return Ok(());
+    }
+
+    if metadata.is_file() {
+        let mut header = tar::Header::new_gnu();
+        header.set_metadata(&metadata);
+        header.set_cksum();
+
+        let file = File::open(source_path).map_err(|err| err.to_string())?;
+        let mut reader = ProgressReader::new(BufReader::new(file), tracker, window, progress_message);
+        tar.append_data(&mut header, archive_path, &mut reader)
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+
+    Err(format!("不支持归档的路径类型: {}", source_path.display()))
+}
+
 fn write_archive_header<W: Write>(writer: &mut W, header: &ArchiveHeader) -> Result<Vec<u8>, String> {
     writer.write_all(MAGIC_HEADER).map_err(|err| err.to_string())?;
-
     let encoded_header = header.encoded_bytes();
     writer
         .write_all(&encoded_header)
         .map_err(|err| err.to_string())?;
-
     Ok(header.aad_bytes())
 }
 
-// 读取 V002 格式的头部参数。旧格式不走这里。
 fn read_archive_header<R: Read>(reader: &mut R) -> Result<ArchiveHeader, String> {
     let mut flags = [0u8; 1];
     reader.read_exact(&mut flags).map_err(|err| err.to_string())?;
@@ -505,8 +671,6 @@ fn read_archive_header<R: Read>(reader: &mut R) -> Result<ArchiveHeader, String>
     })
 }
 
-// tar 解包只关心拿到一个明文字节流，至于明文来自“直接 gzip”还是“先解密再 gunzip”，
-// 上层已经处理完毕，这里统一收口。
 fn extract_archive_contents<R: Read>(reader: R, output_dir: &str) -> Result<(), String> {
     let decompressor = GzDecoder::new(reader);
     let mut archive = tar::Archive::new(decompressor);
@@ -515,13 +679,21 @@ fn extract_archive_contents<R: Read>(reader: R, output_dir: &str) -> Result<(), 
     archive.unpack(output_dir).map_err(|err| err.to_string())
 }
 
-#[command]
-pub async fn create_archive(
+async fn create_archive_impl(
+    window: Option<&Window>,
     inputs: Vec<String>,
     output_path: String,
     password: Option<String>,
     gzip_level: Option<u32>,
 ) -> Result<(), String> {
+    if inputs.is_empty() {
+        return Err("请至少选择一个文件或文件夹".to_string());
+    }
+
+    let stats = collect_input_stats(&inputs)?;
+    let mut tracker = ArchiveProgressTracker::new("pack", "准备归档", stats.total_bytes);
+    tracker.set_stage(window, "准备归档", "正在准备归档");
+
     let normalized_password = normalized_password(password);
     let header = if normalized_password.is_some() {
         ArchiveHeader::new_encrypted()?
@@ -529,22 +701,25 @@ pub async fn create_archive(
         ArchiveHeader::new_plain()
     };
     let level = gzip_level.unwrap_or(DEFAULT_GZIP_LEVEL);
+    let progress_message = if normalized_password.is_some() {
+        "正在压缩并加密"
+    } else {
+        "正在压缩打包"
+    };
 
     let file = File::create(&output_path).map_err(|err| err.to_string())?;
     let mut writer = BufWriter::new(file);
     let aad = write_archive_header(&mut writer, &header)?;
 
-    // 有密码:
-    //   tar -> gzip -> encrypted chunk writer -> file
-    // 无密码:
-    //   tar -> gzip -> file
+    tracker.set_stage(window, progress_message, progress_message);
+
     if let (Some(password), Some(metadata)) = (normalized_password.as_deref(), header.encryption.as_ref()) {
         let key = derive_archive_key(password, metadata)?;
         let payload_writer = EncryptedPayloadWriter::new(writer, key, metadata.stream_nonce, aad);
         let compressor = GzEncoder::new(payload_writer, Compression::new(level));
         let mut tar = tar::Builder::new(compressor);
 
-        append_inputs_to_tar(&mut tar, inputs)?;
+        append_inputs_to_tar(&mut tar, &inputs, &mut tracker, window, progress_message)?;
 
         let compressor = tar
             .into_inner()
@@ -554,12 +729,14 @@ pub async fn create_archive(
             .map_err(|err| format!("Gzip finish failed: {}", err))?;
         let mut writer = payload_writer.finish().map_err(|err| err.to_string())?;
         writer.flush().map_err(|err| err.to_string())?;
+        tracker.finish(window, "归档完成", "归档完成");
         return Ok(());
     }
 
     let compressor = GzEncoder::new(writer, Compression::new(level));
     let mut tar = tar::Builder::new(compressor);
-    append_inputs_to_tar(&mut tar, inputs)?;
+
+    append_inputs_to_tar(&mut tar, &inputs, &mut tracker, window, progress_message)?;
 
     let compressor = tar
         .into_inner()
@@ -569,53 +746,99 @@ pub async fn create_archive(
         .map_err(|err| format!("Gzip finish failed: {}", err))?;
     writer.flush().map_err(|err| err.to_string())?;
 
+    tracker.finish(window, "归档完成", "归档完成");
     Ok(())
 }
 
-#[command]
-pub async fn extract_archive(
+async fn extract_archive_impl(
+    window: Option<&Window>,
     archive_path: String,
     output_dir: String,
     password: Option<String>,
 ) -> Result<(), String> {
     let normalized_password = normalized_password(password);
+    let total_bytes = fs::metadata(&archive_path)
+        .map_err(|err| err.to_string())?
+        .len();
+    let mut tracker = ArchiveProgressTracker::new("extract", "读取归档头", total_bytes);
+    tracker.set_stage(window, "读取归档头", "正在读取归档头");
 
-    let file = File::open(&archive_path).map_err(|err| err.to_string())?;
-    let mut reader = BufReader::new(file);
+    {
+        let file = File::open(&archive_path).map_err(|err| err.to_string())?;
+        let buffered = BufReader::new(file);
+        let mut progress_reader = ProgressReader::new(buffered, &mut tracker, window, "正在读取归档头");
 
-    let mut magic = [0u8; MAGIC_HEADER.len()];
-    if reader.read_exact(&mut magic).is_err() || magic != *MAGIC_HEADER {
-        return Err("文件损坏或格式不正确：无法识别的 Krate 包".to_string());
+        let mut magic = [0u8; MAGIC_HEADER.len()];
+        if progress_reader.read_exact(&mut magic).is_err() || magic != *MAGIC_HEADER {
+            return Err("文件损坏或格式不正确：无法识别的 Krate 包".to_string());
+        }
+
+        let mut marker = [0u8; FORMAT_MARKER.len()];
+        progress_reader
+            .read_exact(&mut marker)
+            .map_err(|err| err.to_string())?;
+
+        if marker != *FORMAT_MARKER {
+            return Err("不支持的 .krate 版本，请使用当前版本重新生成归档".to_string());
+        }
+
+        let header = read_archive_header(&mut progress_reader)?;
+
+        if let Some(metadata) = header.encryption.as_ref() {
+            let password = normalized_password
+                .as_deref()
+                .ok_or("该 .krate 归档已加密，请输入密码后再解压".to_string())?;
+            let key = derive_archive_key(password, metadata)?;
+            progress_reader.message = "正在校验密码并解压";
+            progress_reader
+                .tracker
+                .set_stage(progress_reader.window, "正在校验密码并解压", "正在校验密码并解压");
+
+            let mut payload_reader = EncryptedPayloadReader::new(
+                progress_reader,
+                key,
+                metadata.stream_nonce,
+                header.aad_bytes(),
+            );
+            payload_reader.prime().map_err(|err| err.to_string())?;
+            extract_archive_contents(payload_reader, &output_dir)?;
+        } else {
+            progress_reader.message = "正在解压归档";
+            progress_reader
+                .tracker
+                .set_stage(progress_reader.window, "正在解压归档", "正在解压归档");
+            extract_archive_contents(progress_reader, &output_dir)?;
+        }
     }
 
-    let mut marker = [0u8; FORMAT_MARKER.len()];
-    reader.read_exact(&mut marker).map_err(|err| err.to_string())?;
+    tracker.finish(window, "解压完成", "解压完成");
+    Ok(())
+}
 
-    if marker != *FORMAT_MARKER {
-        return Err("不支持的 .krate 版本，请使用当前版本重新生成归档".to_string());
-    }
+#[command]
+pub async fn create_archive(
+    window: Window,
+    inputs: Vec<String>,
+    output_path: String,
+    password: Option<String>,
+    gzip_level: Option<u32>,
+) -> Result<(), String> {
+    create_archive_impl(Some(&window), inputs, output_path, password, gzip_level).await
+}
 
-    let header = read_archive_header(&mut reader)?;
-
-    // V002 有密码时必须先完成首块认证，再进入 tar/gzip 解包流程。
-    if let Some(metadata) = header.encryption.as_ref() {
-        let password = normalized_password
-            .as_deref()
-            .ok_or("该 .krate 归档已加密，请输入密码后再解压".to_string())?;
-        let key = derive_archive_key(password, metadata)?;
-        let mut payload_reader =
-            EncryptedPayloadReader::new(reader, key, metadata.stream_nonce, header.aad_bytes());
-        payload_reader.prime().map_err(|err| err.to_string())?;
-        return extract_archive_contents(payload_reader, &output_dir);
-    }
-
-    extract_archive_contents(reader, &output_dir)
+#[command]
+pub async fn extract_archive(
+    window: Window,
+    archive_path: String,
+    output_dir: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    extract_archive_impl(Some(&window), archive_path, output_dir, password).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -646,7 +869,8 @@ mod tests {
 
         write_text_file(&input_file, expected);
 
-        create_archive(
+        create_archive_impl(
+            None,
             vec![input_file.to_string_lossy().to_string()],
             archive_file.to_string_lossy().to_string(),
             None,
@@ -655,7 +879,8 @@ mod tests {
         .await
         .unwrap();
 
-        extract_archive(
+        extract_archive_impl(
+            None,
             archive_file.to_string_lossy().to_string(),
             output_dir.to_string_lossy().to_string(),
             None,
@@ -680,7 +905,8 @@ mod tests {
 
         write_text_file(&input_file, expected);
 
-        create_archive(
+        create_archive_impl(
+            None,
             vec![input_file.to_string_lossy().to_string()],
             archive_file.to_string_lossy().to_string(),
             Some(password.to_string()),
@@ -689,7 +915,8 @@ mod tests {
         .await
         .unwrap();
 
-        extract_archive(
+        extract_archive_impl(
+            None,
             archive_file.to_string_lossy().to_string(),
             output_dir.to_string_lossy().to_string(),
             Some(password.to_string()),
@@ -712,7 +939,8 @@ mod tests {
 
         write_text_file(&input_file, "do not leak");
 
-        create_archive(
+        create_archive_impl(
+            None,
             vec![input_file.to_string_lossy().to_string()],
             archive_file.to_string_lossy().to_string(),
             Some("right-password".to_string()),
@@ -721,7 +949,8 @@ mod tests {
         .await
         .unwrap();
 
-        let error = extract_archive(
+        let error = extract_archive_impl(
+            None,
             archive_file.to_string_lossy().to_string(),
             output_dir.to_string_lossy().to_string(),
             Some("wrong-password".to_string()),
@@ -729,7 +958,7 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.contains("解密失败"));
+        assert!(error.contains("归档解密失败"));
 
         let _ = fs::remove_dir_all(root);
     }
