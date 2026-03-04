@@ -1,18 +1,21 @@
 use aead::{
-    Payload,
     generic_array::GenericArray,
     stream::{DecryptorBE32, EncryptorBE32},
+    Payload,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
-use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use std::fs::{self, File};
+use flate2::Compression;
+use std::collections::HashSet;
+use std::ffi::{OsStr, OsString};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tauri::{Emitter, Window, command};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{command, Emitter, Window};
 
 const MAGIC_HEADER: &[u8; 9] = b"KRATE_PKG";
 const FORMAT_MARKER: &[u8; 4] = b"V002";
@@ -24,6 +27,9 @@ const DEFAULT_GZIP_LEVEL: u32 = 6;
 const DEFAULT_ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 const DEFAULT_ARGON2_ITERATIONS: u32 = 2;
 const MAX_ARGON2_LANES: u32 = 4;
+const MAX_ARCHIVE_ARGON2_MEMORY_KIB: u32 = 256 * 1024;
+const MAX_ARCHIVE_ARGON2_ITERATIONS: u32 = 6;
+const TEMP_OUTPUT_ATTEMPTS: usize = 16;
 
 const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
@@ -63,6 +69,12 @@ struct ArchiveProgressTracker {
     processed_bytes: u64,
     last_emitted_progress: i16,
     current_path: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ArchiveInput {
+    source_path: PathBuf,
+    archive_root: PathBuf,
 }
 
 struct ProgressReader<'a, R: Read> {
@@ -132,7 +144,11 @@ impl ArchiveProgressTracker {
 
     fn emit(&mut self, window: Option<&Window>, message: &'static str, force: bool) {
         let progress = if self.total_bytes == 0 {
-            if force { 100.0 } else { 0.0 }
+            if force {
+                100.0
+            } else {
+                0.0
+            }
         } else {
             (self.processed_bytes as f64 / self.total_bytes as f64 * 100.0).clamp(0.0, 100.0)
         };
@@ -252,7 +268,12 @@ struct EncryptedPayloadWriter<W: Write> {
 }
 
 impl<W: Write> EncryptedPayloadWriter<W> {
-    fn new(inner: W, key_bytes: [u8; KEY_LEN], nonce_bytes: [u8; STREAM_NONCE_LEN], aad: Vec<u8>) -> Self {
+    fn new(
+        inner: W,
+        key_bytes: [u8; KEY_LEN],
+        nonce_bytes: [u8; STREAM_NONCE_LEN],
+        aad: Vec<u8>,
+    ) -> Self {
         let key = GenericArray::clone_from_slice(&key_bytes);
         let nonce = GenericArray::clone_from_slice(&nonce_bytes);
         let cipher = ArchiveCipher::new(&key);
@@ -275,12 +296,22 @@ impl<W: Write> EncryptedPayloadWriter<W> {
         let ciphertext = if is_last {
             self.encryptor
                 .take()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "archive writer already finalized"))?
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "archive writer already finalized",
+                    )
+                })?
                 .encrypt_last(payload)
         } else {
             self.encryptor
                 .as_mut()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "archive writer already finalized"))?
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "archive writer already finalized",
+                    )
+                })?
                 .encrypt_next(payload)
         }
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "archive encryption failed"))?;
@@ -292,7 +323,11 @@ impl<W: Write> EncryptedPayloadWriter<W> {
             )
         })?;
 
-        self.inner.write_all(&[if is_last { CHUNK_FLAG_LAST } else { CHUNK_FLAG_NEXT }])?;
+        self.inner.write_all(&[if is_last {
+            CHUNK_FLAG_LAST
+        } else {
+            CHUNK_FLAG_NEXT
+        }])?;
         self.inner.write_all(&chunk_len.to_le_bytes())?;
         self.inner.write_all(&ciphertext)?;
         Ok(())
@@ -364,7 +399,12 @@ struct EncryptedPayloadReader<R: Read> {
 }
 
 impl<R: Read> EncryptedPayloadReader<R> {
-    fn new(inner: R, key_bytes: [u8; KEY_LEN], nonce_bytes: [u8; STREAM_NONCE_LEN], aad: Vec<u8>) -> Self {
+    fn new(
+        inner: R,
+        key_bytes: [u8; KEY_LEN],
+        nonce_bytes: [u8; STREAM_NONCE_LEN],
+        aad: Vec<u8>,
+    ) -> Self {
         let key = GenericArray::clone_from_slice(&key_bytes);
         let nonce = GenericArray::clone_from_slice(&nonce_bytes);
         let cipher = ArchiveCipher::new(&key);
@@ -383,7 +423,10 @@ impl<R: Read> EncryptedPayloadReader<R> {
         let mut flag = [0u8; 1];
         self.inner.read_exact(&mut flag).map_err(|err| {
             if err.kind() == io::ErrorKind::UnexpectedEof {
-                io::Error::new(io::ErrorKind::InvalidData, "encrypted archive ended unexpectedly")
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "encrypted archive ended unexpectedly",
+                )
             } else {
                 err
             }
@@ -412,13 +455,23 @@ impl<R: Read> EncryptedPayloadReader<R> {
             CHUNK_FLAG_NEXT => self
                 .decryptor
                 .as_mut()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "archive reader already finalized"))?
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "archive reader already finalized",
+                    )
+                })?
                 .decrypt_next(payload),
             CHUNK_FLAG_LAST => {
                 self.finished = true;
                 self.decryptor
                     .take()
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "archive reader already finalized"))?
+                    .ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "archive reader already finalized",
+                        )
+                    })?
                     .decrypt_last(payload)
             }
             _ => {
@@ -428,7 +481,12 @@ impl<R: Read> EncryptedPayloadReader<R> {
                 ))
             }
         }
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "归档解密失败，密码错误或文件已损坏"))?;
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "归档解密失败，密码错误或文件已损坏",
+            )
+        })?;
 
         self.offset = 0;
         Ok(())
@@ -474,14 +532,7 @@ fn emit_archive_progress(window: Option<&Window>, payload: ArchiveProgressPayloa
 }
 
 fn normalized_password(password: Option<String>) -> Option<String> {
-    password.and_then(|value| {
-        let trimmed = value.trim().to_string();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed)
-        }
-    })
+    password.and_then(|value| if value.is_empty() { None } else { Some(value) })
 }
 
 fn default_argon2_lanes() -> u32 {
@@ -497,7 +548,28 @@ fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
     Ok(bytes)
 }
 
-fn derive_archive_key(password: &str, metadata: &EncryptionMetadata) -> Result<[u8; KEY_LEN], String> {
+fn validate_encryption_metadata(metadata: &EncryptionMetadata) -> Result<(), String> {
+    if metadata.memory_kib > MAX_ARCHIVE_ARGON2_MEMORY_KIB {
+        return Err("归档加密参数超出当前版本支持范围".to_string());
+    }
+
+    if metadata.iterations > MAX_ARCHIVE_ARGON2_ITERATIONS {
+        return Err("归档加密参数超出当前版本支持范围".to_string());
+    }
+
+    if metadata.lanes == 0 || metadata.lanes > MAX_ARGON2_LANES {
+        return Err("归档加密参数超出当前版本支持范围".to_string());
+    }
+
+    Ok(())
+}
+
+fn derive_archive_key(
+    password: &str,
+    metadata: &EncryptionMetadata,
+) -> Result<[u8; KEY_LEN], String> {
+    validate_encryption_metadata(metadata)?;
+
     let params = Params::new(
         metadata.memory_kib,
         metadata.iterations,
@@ -516,18 +588,203 @@ fn derive_archive_key(password: &str, metadata: &EncryptionMetadata) -> Result<[
     Ok(key)
 }
 
-fn collect_input_stats(inputs: &[String]) -> Result<InputStats, String> {
-    let mut stats = InputStats::default();
+fn absolute_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        Ok(path.to_path_buf())
+    } else {
+        std::env::current_dir()
+            .map_err(|err| err.to_string())
+            .map(|cwd| cwd.join(path))
+    }
+}
+
+fn normalize_path_for_comparison(path: &Path) -> Result<PathBuf, String> {
+    let absolute = absolute_path(path)?;
+
+    if absolute.file_name().is_none() {
+        return absolute.canonicalize().map_err(|err| err.to_string());
+    }
+
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| format!("无效的路径: {}", absolute.display()))?;
+    let normalized_parent = parent.canonicalize().map_err(|err| err.to_string())?;
+    Ok(normalized_parent.join(
+        absolute
+            .file_name()
+            .ok_or_else(|| format!("无效的路径: {}", absolute.display()))?,
+    ))
+}
+
+fn suffixed_name(original_name: &OsStr, suffix: usize) -> OsString {
+    let original_path = Path::new(original_name);
+
+    if let (Some(stem), Some(extension)) = (original_path.file_stem(), original_path.extension()) {
+        let mut candidate = OsString::from(stem);
+        candidate.push(format!(" ({suffix})"));
+        candidate.push(".");
+        candidate.push(extension);
+        return candidate;
+    }
+
+    let mut candidate = OsString::from(original_name);
+    candidate.push(format!(" ({suffix})"));
+    candidate
+}
+
+fn build_archive_inputs(inputs: &[String]) -> Result<Vec<ArchiveInput>, String> {
+    let mut archive_inputs = Vec::with_capacity(inputs.len());
+    let mut used_roots = HashSet::new();
 
     for path_str in inputs {
-        collect_path_stats(Path::new(path_str), &mut stats)?;
+        let source_path = PathBuf::from(path_str);
+        let file_name = source_path
+            .file_name()
+            .ok_or_else(|| format!("无效的归档输入路径: {}", source_path.display()))?;
+
+        let mut archive_name = file_name.to_os_string();
+        if used_roots.contains(&archive_name) {
+            let mut suffix = 2usize;
+            loop {
+                archive_name = suffixed_name(file_name, suffix);
+                if !used_roots.contains(&archive_name) {
+                    break;
+                }
+                suffix += 1;
+            }
+        }
+        used_roots.insert(archive_name.clone());
+
+        archive_inputs.push(ArchiveInput {
+            source_path,
+            archive_root: PathBuf::from(archive_name),
+        });
+    }
+
+    Ok(archive_inputs)
+}
+
+fn ensure_output_path_is_safe(inputs: &[ArchiveInput], output_path: &Path) -> Result<(), String> {
+    if output_path.exists() && output_path.is_dir() {
+        return Err("输出路径不能是文件夹".to_string());
+    }
+
+    let normalized_output = normalize_path_for_comparison(output_path)?;
+
+    for input in inputs {
+        let metadata = fs::symlink_metadata(&input.source_path).map_err(|err| err.to_string())?;
+        let normalized_input = normalize_path_for_comparison(&input.source_path)?;
+
+        if normalized_input == normalized_output {
+            return Err(format!(
+                "输出文件不能与输入路径相同: {}",
+                input.source_path.display()
+            ));
+        }
+
+        if metadata.is_dir() && normalized_output.starts_with(&normalized_input) {
+            return Err(format!(
+                "输出文件不能位于待归档目录内: {}",
+                input.source_path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn unique_temp_output_path(output_path: &Path) -> Result<PathBuf, String> {
+    let parent = output_path
+        .parent()
+        .ok_or_else(|| format!("无效的输出路径: {}", output_path.display()))?;
+    let file_name = output_path
+        .file_name()
+        .ok_or_else(|| format!("无效的输出路径: {}", output_path.display()))?;
+
+    for attempt in 0..TEMP_OUTPUT_ATTEMPTS {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|err| err.to_string())?
+            .as_nanos();
+        let mut temp_name = OsString::from(".");
+        temp_name.push(file_name);
+        temp_name.push(format!(".tmp-{}-{nanos}-{attempt}", std::process::id()));
+        let temp_path = parent.join(temp_name);
+        if !temp_path.exists() {
+            return Ok(temp_path);
+        }
+    }
+
+    Err("无法为归档创建临时输出文件".to_string())
+}
+
+fn persist_temp_output(temp_path: &Path, output_path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    if output_path.exists() {
+        fs::remove_file(output_path).map_err(|err| err.to_string())?;
+    }
+
+    fs::rename(temp_path, output_path).map_err(|err| err.to_string())
+}
+
+fn extract_root_base_name(archive_path: &Path) -> OsString {
+    match archive_path.file_stem() {
+        Some(stem) if !stem.is_empty() => stem.to_os_string(),
+        _ => OsString::from("krate-archive"),
+    }
+}
+
+fn unique_output_dir(parent: &Path, base_name: &OsStr) -> PathBuf {
+    let first_candidate = parent.join(base_name);
+    if !first_candidate.exists() {
+        return first_candidate;
+    }
+
+    let mut suffix = 2usize;
+    loop {
+        let candidate = parent.join(suffixed_name(base_name, suffix));
+        if !candidate.exists() {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn prepare_extract_output_dir(
+    archive_path: &Path,
+    output_parent: &Path,
+) -> Result<PathBuf, String> {
+    if output_parent.exists() {
+        if !output_parent.is_dir() {
+            return Err("输出目录不是文件夹".to_string());
+        }
+    } else {
+        fs::create_dir_all(output_parent).map_err(|err| err.to_string())?;
+    }
+
+    Ok(unique_output_dir(
+        output_parent,
+        &extract_root_base_name(archive_path),
+    ))
+}
+
+fn collect_input_stats(inputs: &[ArchiveInput]) -> Result<InputStats, String> {
+    let mut stats = InputStats::default();
+
+    for input in inputs {
+        collect_path_stats(&input.source_path, &mut stats)?;
     }
 
     Ok(stats)
 }
 
 fn collect_path_stats(path: &Path, stats: &mut InputStats) -> Result<(), String> {
-    let metadata = fs::metadata(path).map_err(|err| err.to_string())?;
+    let metadata = fs::symlink_metadata(path).map_err(|err| err.to_string())?;
+
+    if metadata.file_type().is_symlink() {
+        stats.total_files = stats.total_files.saturating_add(1);
+        return Ok(());
+    }
 
     if metadata.is_file() {
         stats.total_bytes = stats.total_bytes.saturating_add(metadata.len());
@@ -548,7 +805,11 @@ fn collect_path_stats(path: &Path, stats: &mut InputStats) -> Result<(), String>
 fn sorted_children(path: &Path) -> Result<Vec<PathBuf>, String> {
     let mut children = fs::read_dir(path)
         .map_err(|err| err.to_string())?
-        .map(|entry| entry.map(|child| child.path()).map_err(|err| err.to_string()))
+        .map(|entry| {
+            entry
+                .map(|child| child.path())
+                .map_err(|err| err.to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?;
     children.sort();
     Ok(children)
@@ -558,18 +819,20 @@ fn sorted_children(path: &Path) -> Result<Vec<PathBuf>, String> {
 // 这样前端能展示“正在处理哪个文件”，而不是只有百分比。
 fn append_inputs_to_tar<W: Write>(
     tar: &mut tar::Builder<W>,
-    inputs: &[String],
+    inputs: &[ArchiveInput],
     tracker: &mut ArchiveProgressTracker,
     window: Option<&Window>,
     progress_message: &'static str,
 ) -> Result<(), String> {
-    for path_str in inputs {
-        let path = Path::new(path_str);
-        let archive_root = path
-            .file_name()
-            .map(PathBuf::from)
-            .ok_or_else(|| format!("无效的归档输入路径: {}", path.display()))?;
-        append_path_to_tar(tar, path, &archive_root, tracker, window, progress_message)?;
+    for input in inputs {
+        append_path_to_tar(
+            tar,
+            &input.source_path,
+            &input.archive_root,
+            tracker,
+            window,
+            progress_message,
+        )?;
     }
 
     Ok(())
@@ -583,7 +846,22 @@ fn append_path_to_tar<W: Write>(
     window: Option<&Window>,
     progress_message: &'static str,
 ) -> Result<(), String> {
-    let metadata = fs::metadata(source_path).map_err(|err| err.to_string())?;
+    let metadata = fs::symlink_metadata(source_path).map_err(|err| err.to_string())?;
+
+    if metadata.file_type().is_symlink() {
+        tracker.set_current_path(
+            window,
+            Some(source_path.display().to_string()),
+            progress_message,
+        );
+
+        let mut header = tar::Header::new_gnu();
+        header.set_metadata(&metadata);
+        let target = fs::read_link(source_path).map_err(|err| err.to_string())?;
+        tar.append_link(&mut header, archive_path, target)
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
 
     if metadata.is_dir() {
         tar.append_dir(archive_path, source_path)
@@ -619,7 +897,8 @@ fn append_path_to_tar<W: Write>(
         header.set_cksum();
 
         let file = File::open(source_path).map_err(|err| err.to_string())?;
-        let mut reader = ProgressReader::new(BufReader::new(file), tracker, window, progress_message);
+        let mut reader =
+            ProgressReader::new(BufReader::new(file), tracker, window, progress_message);
         tar.append_data(&mut header, archive_path, &mut reader)
             .map_err(|err| err.to_string())?;
         return Ok(());
@@ -628,8 +907,13 @@ fn append_path_to_tar<W: Write>(
     Err(format!("不支持归档的路径类型: {}", source_path.display()))
 }
 
-fn write_archive_header<W: Write>(writer: &mut W, header: &ArchiveHeader) -> Result<Vec<u8>, String> {
-    writer.write_all(MAGIC_HEADER).map_err(|err| err.to_string())?;
+fn write_archive_header<W: Write>(
+    writer: &mut W,
+    header: &ArchiveHeader,
+) -> Result<Vec<u8>, String> {
+    writer
+        .write_all(MAGIC_HEADER)
+        .map_err(|err| err.to_string())?;
     let encoded_header = header.encoded_bytes();
     writer
         .write_all(&encoded_header)
@@ -639,7 +923,9 @@ fn write_archive_header<W: Write>(writer: &mut W, header: &ArchiveHeader) -> Res
 
 fn read_archive_header<R: Read>(reader: &mut R) -> Result<ArchiveHeader, String> {
     let mut flags = [0u8; 1];
-    reader.read_exact(&mut flags).map_err(|err| err.to_string())?;
+    reader
+        .read_exact(&mut flags)
+        .map_err(|err| err.to_string())?;
 
     let mut compression = [0u8; 1];
     reader
@@ -683,12 +969,18 @@ fn read_archive_header<R: Read>(reader: &mut R) -> Result<ArchiveHeader, String>
     })
 }
 
-fn extract_archive_contents<R: Read>(reader: R, output_dir: &str) -> Result<(), String> {
+fn extract_archive_contents<R: Read>(reader: R, output_dir: &Path) -> Result<(), String> {
+    fs::create_dir(output_dir).map_err(|err| err.to_string())?;
     let decompressor = GzDecoder::new(reader);
     let mut archive = tar::Archive::new(decompressor);
     archive.set_preserve_permissions(true);
     archive.set_unpack_xattrs(false);
-    archive.unpack(output_dir).map_err(|err| err.to_string())
+    archive.set_overwrite(false);
+    if let Err(err) = archive.unpack(output_dir) {
+        let _ = fs::remove_dir_all(output_dir);
+        return Err(err.to_string());
+    }
+    Ok(())
 }
 
 async fn create_archive_impl(
@@ -702,63 +994,103 @@ async fn create_archive_impl(
         return Err("请至少选择一个文件或文件夹".to_string());
     }
 
-    let stats = collect_input_stats(&inputs)?;
-    let mut tracker = ArchiveProgressTracker::new("pack", "准备归档", stats.total_bytes);
-    tracker.set_stage(window, "准备归档", "正在准备归档");
+    let archive_inputs = build_archive_inputs(&inputs)?;
+    let output_path = absolute_path(Path::new(&output_path))?;
+    ensure_output_path_is_safe(&archive_inputs, &output_path)?;
+    let temp_output_path = unique_temp_output_path(&output_path)?;
 
-    let normalized_password = normalized_password(password);
-    let header = if normalized_password.is_some() {
-        ArchiveHeader::new_encrypted()?
-    } else {
-        ArchiveHeader::new_plain()
-    };
-    let level = gzip_level.unwrap_or(DEFAULT_GZIP_LEVEL);
-    let progress_message = if normalized_password.is_some() {
-        "正在压缩并加密"
-    } else {
-        "正在压缩打包"
-    };
+    let result = (|| -> Result<(), String> {
+        let stats = collect_input_stats(&archive_inputs)?;
+        let mut tracker = ArchiveProgressTracker::new("pack", "准备归档", stats.total_bytes);
+        tracker.set_stage(window, "准备归档", "正在准备归档");
 
-    let file = File::create(&output_path).map_err(|err| err.to_string())?;
-    let mut writer = BufWriter::new(file);
-    let aad = write_archive_header(&mut writer, &header)?;
+        let normalized_password = normalized_password(password);
+        let header = if normalized_password.is_some() {
+            ArchiveHeader::new_encrypted()?
+        } else {
+            ArchiveHeader::new_plain()
+        };
+        let level = gzip_level.unwrap_or(DEFAULT_GZIP_LEVEL);
+        let progress_message = if normalized_password.is_some() {
+            "正在压缩并加密"
+        } else {
+            "正在压缩打包"
+        };
 
-    tracker.set_stage(window, progress_message, progress_message);
+        let file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_output_path)
+            .map_err(|err| err.to_string())?;
+        let mut writer = BufWriter::new(file);
+        let aad = write_archive_header(&mut writer, &header)?;
 
-    if let (Some(password), Some(metadata)) = (normalized_password.as_deref(), header.encryption.as_ref()) {
-        let key = derive_archive_key(password, metadata)?;
-        let payload_writer = EncryptedPayloadWriter::new(writer, key, metadata.stream_nonce, aad);
-        let compressor = GzEncoder::new(payload_writer, Compression::new(level));
+        tracker.set_stage(window, progress_message, progress_message);
+
+        if let (Some(password), Some(metadata)) =
+            (normalized_password.as_deref(), header.encryption.as_ref())
+        {
+            let key = derive_archive_key(password, metadata)?;
+            let payload_writer =
+                EncryptedPayloadWriter::new(writer, key, metadata.stream_nonce, aad);
+            let compressor = GzEncoder::new(payload_writer, Compression::new(level));
+            let mut tar = tar::Builder::new(compressor);
+            tar.follow_symlinks(false);
+
+            append_inputs_to_tar(
+                &mut tar,
+                &archive_inputs,
+                &mut tracker,
+                window,
+                progress_message,
+            )?;
+
+            let compressor = tar
+                .into_inner()
+                .map_err(|err| format!("Tar finish failed: {}", err))?;
+            let payload_writer = compressor
+                .finish()
+                .map_err(|err| format!("Gzip finish failed: {}", err))?;
+            let mut writer = payload_writer.finish().map_err(|err| err.to_string())?;
+            writer.flush().map_err(|err| err.to_string())?;
+            tracker.finish(window, "归档完成", "归档完成");
+            return Ok(());
+        }
+
+        let compressor = GzEncoder::new(writer, Compression::new(level));
         let mut tar = tar::Builder::new(compressor);
+        tar.follow_symlinks(false);
 
-        append_inputs_to_tar(&mut tar, &inputs, &mut tracker, window, progress_message)?;
+        append_inputs_to_tar(
+            &mut tar,
+            &archive_inputs,
+            &mut tracker,
+            window,
+            progress_message,
+        )?;
 
         let compressor = tar
             .into_inner()
             .map_err(|err| format!("Tar finish failed: {}", err))?;
-        let payload_writer = compressor
+        let mut writer = compressor
             .finish()
             .map_err(|err| format!("Gzip finish failed: {}", err))?;
-        let mut writer = payload_writer.finish().map_err(|err| err.to_string())?;
         writer.flush().map_err(|err| err.to_string())?;
+
         tracker.finish(window, "归档完成", "归档完成");
-        return Ok(());
+        Ok(())
+    })();
+
+    if let Err(err) = result {
+        let _ = fs::remove_file(&temp_output_path);
+        return Err(err);
     }
 
-    let compressor = GzEncoder::new(writer, Compression::new(level));
-    let mut tar = tar::Builder::new(compressor);
+    if let Err(err) = persist_temp_output(&temp_output_path, &output_path) {
+        let _ = fs::remove_file(&temp_output_path);
+        return Err(err);
+    }
 
-    append_inputs_to_tar(&mut tar, &inputs, &mut tracker, window, progress_message)?;
-
-    let compressor = tar
-        .into_inner()
-        .map_err(|err| format!("Tar finish failed: {}", err))?;
-    let mut writer = compressor
-        .finish()
-        .map_err(|err| format!("Gzip finish failed: {}", err))?;
-    writer.flush().map_err(|err| err.to_string())?;
-
-    tracker.finish(window, "归档完成", "归档完成");
     Ok(())
 }
 
@@ -767,8 +1099,11 @@ async fn extract_archive_impl(
     archive_path: String,
     output_dir: String,
     password: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let normalized_password = normalized_password(password);
+    let archive_path = absolute_path(Path::new(&archive_path))?;
+    let output_parent = absolute_path(Path::new(&output_dir))?;
+    let extract_root = prepare_extract_output_dir(&archive_path, &output_parent)?;
     let total_bytes = fs::metadata(&archive_path)
         .map_err(|err| err.to_string())?
         .len();
@@ -801,9 +1136,11 @@ async fn extract_archive_impl(
             .ok_or("该 .krate 归档已加密，请输入密码后再解压".to_string())?;
         let key = derive_archive_key(password, metadata)?;
         progress_reader.message = "正在校验密码并解压";
-        progress_reader
-            .tracker
-            .set_stage(progress_reader.window, "正在校验密码并解压", "正在校验密码并解压");
+        progress_reader.tracker.set_stage(
+            progress_reader.window,
+            "正在校验密码并解压",
+            "正在校验密码并解压",
+        );
 
         let mut payload_reader = EncryptedPayloadReader::new(
             progress_reader,
@@ -812,17 +1149,17 @@ async fn extract_archive_impl(
             header.aad_bytes(),
         );
         payload_reader.prime().map_err(|err| err.to_string())?;
-        extract_archive_contents(payload_reader, &output_dir)?;
+        extract_archive_contents(payload_reader, &extract_root)?;
     } else {
         progress_reader.message = "正在解压归档";
         progress_reader
             .tracker
             .set_stage(progress_reader.window, "正在解压归档", "正在解压归档");
-        extract_archive_contents(progress_reader, &output_dir)?;
+        extract_archive_contents(progress_reader, &extract_root)?;
     }
 
     tracker.finish(window, "解压完成", "解压完成");
-    Ok(())
+    Ok(extract_root.to_string_lossy().to_string())
 }
 
 #[command]
@@ -842,7 +1179,7 @@ pub async fn extract_archive(
     archive_path: String,
     output_dir: String,
     password: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     extract_archive_impl(Some(&window), archive_path, output_dir, password).await
 }
 
@@ -892,13 +1229,19 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
     fn temp_case_dir(name: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        path.push(format!("krate-archive-{name}-{}-{nanos}", std::process::id()));
+        path.push(format!(
+            "krate-archive-{name}-{}-{nanos}",
+            std::process::id()
+        ));
         path
     }
 
@@ -929,7 +1272,7 @@ mod tests {
         .await
         .unwrap();
 
-        extract_archive_impl(
+        let extracted_dir = extract_archive_impl(
             None,
             archive_file.to_string_lossy().to_string(),
             output_dir.to_string_lossy().to_string(),
@@ -938,7 +1281,8 @@ mod tests {
         .await
         .unwrap();
 
-        let extracted = fs::read_to_string(output_dir.join("notes.txt")).unwrap();
+        assert_eq!(PathBuf::from(&extracted_dir), output_dir.join("plain"));
+        let extracted = fs::read_to_string(Path::new(&extracted_dir).join("notes.txt")).unwrap();
         assert_eq!(extracted, expected);
 
         let _ = fs::remove_dir_all(root);
@@ -965,7 +1309,7 @@ mod tests {
         .await
         .unwrap();
 
-        extract_archive_impl(
+        let extracted_dir = extract_archive_impl(
             None,
             archive_file.to_string_lossy().to_string(),
             output_dir.to_string_lossy().to_string(),
@@ -974,7 +1318,8 @@ mod tests {
         .await
         .unwrap();
 
-        let extracted = fs::read_to_string(output_dir.join("secret.txt")).unwrap();
+        assert_eq!(PathBuf::from(&extracted_dir), output_dir.join("secret"));
+        let extracted = fs::read_to_string(Path::new(&extracted_dir).join("secret.txt")).unwrap();
         assert_eq!(extracted, expected);
 
         let _ = fs::remove_dir_all(root);
@@ -1009,6 +1354,282 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("归档解密失败"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn password_preserves_leading_and_trailing_spaces() {
+        let root = temp_case_dir("whitespace-password");
+        let input_file = root.join("input").join("secret.txt");
+        let archive_file = root.join("secret.krate");
+        let output_dir = root.join("output-ok");
+        let failed_output_dir = root.join("output-failed");
+        let password = "  padded password  ";
+
+        write_text_file(&input_file, "keep spaces");
+
+        create_archive_impl(
+            None,
+            vec![input_file.to_string_lossy().to_string()],
+            archive_file.to_string_lossy().to_string(),
+            Some(password.to_string()),
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let extracted_dir = extract_archive_impl(
+            None,
+            archive_file.to_string_lossy().to_string(),
+            output_dir.to_string_lossy().to_string(),
+            Some(password.to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(Path::new(&extracted_dir).join("secret.txt")).unwrap(),
+            "keep spaces"
+        );
+
+        let error = extract_archive_impl(
+            None,
+            archive_file.to_string_lossy().to_string(),
+            failed_output_dir.to_string_lossy().to_string(),
+            Some(password.trim().to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("归档解密失败"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn create_archive_rejects_overlapping_output_paths() {
+        let root = temp_case_dir("overlap");
+        let input_dir = root.join("input");
+        let input_file = input_dir.join("notes.txt");
+        let nested_output = input_dir.join("nested.krate");
+
+        write_text_file(&input_file, "source data");
+
+        let same_file_error = create_archive_impl(
+            None,
+            vec![input_file.to_string_lossy().to_string()],
+            input_file.to_string_lossy().to_string(),
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap_err();
+        assert!(same_file_error.contains("输出文件不能与输入路径相同"));
+        assert_eq!(fs::read_to_string(&input_file).unwrap(), "source data");
+
+        let nested_error = create_archive_impl(
+            None,
+            vec![input_dir.to_string_lossy().to_string()],
+            nested_output.to_string_lossy().to_string(),
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap_err();
+        assert!(nested_error.contains("输出文件不能位于待归档目录内"));
+        assert!(!nested_output.exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn duplicate_root_names_are_disambiguated() {
+        let root = temp_case_dir("duplicate-roots");
+        let left = root.join("left").join("config.json");
+        let right = root.join("right").join("config.json");
+        let archive_file = root.join("bundle.krate");
+        let output_dir = root.join("output");
+
+        write_text_file(&left, "left");
+        write_text_file(&right, "right");
+
+        create_archive_impl(
+            None,
+            vec![
+                left.to_string_lossy().to_string(),
+                right.to_string_lossy().to_string(),
+            ],
+            archive_file.to_string_lossy().to_string(),
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let extracted_dir = extract_archive_impl(
+            None,
+            archive_file.to_string_lossy().to_string(),
+            output_dir.to_string_lossy().to_string(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(Path::new(&extracted_dir).join("config.json")).unwrap(),
+            "left"
+        );
+        assert_eq!(
+            fs::read_to_string(Path::new(&extracted_dir).join("config (2).json")).unwrap(),
+            "right"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn extract_archive_uses_unique_output_directories() {
+        let root = temp_case_dir("extract-output");
+        let input_file = root.join("input").join("notes.txt");
+        let archive_file = root.join("plain.krate");
+        let output_dir = root.join("output");
+        let existing_file = output_dir.join("notes.txt");
+
+        write_text_file(&input_file, "archive data");
+        write_text_file(&existing_file, "existing data");
+
+        create_archive_impl(
+            None,
+            vec![input_file.to_string_lossy().to_string()],
+            archive_file.to_string_lossy().to_string(),
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let first_extract_dir = PathBuf::from(
+            extract_archive_impl(
+                None,
+                archive_file.to_string_lossy().to_string(),
+                output_dir.to_string_lossy().to_string(),
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+        let second_extract_dir = PathBuf::from(
+            extract_archive_impl(
+                None,
+                archive_file.to_string_lossy().to_string(),
+                output_dir.to_string_lossy().to_string(),
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+
+        assert_eq!(fs::read_to_string(&existing_file).unwrap(), "existing data");
+        assert_eq!(
+            fs::read_to_string(first_extract_dir.join("notes.txt")).unwrap(),
+            "archive data"
+        );
+        assert_eq!(
+            fs::read_to_string(second_extract_dir.join("notes.txt")).unwrap(),
+            "archive data"
+        );
+        assert_ne!(first_extract_dir, second_extract_dir);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn tampered_kdf_parameters_are_rejected() {
+        let root = temp_case_dir("tampered-kdf");
+        let input_file = root.join("input").join("secret.txt");
+        let archive_file = root.join("secret.krate");
+        let output_dir = root.join("output");
+
+        write_text_file(&input_file, "sensitive");
+
+        create_archive_impl(
+            None,
+            vec![input_file.to_string_lossy().to_string()],
+            archive_file.to_string_lossy().to_string(),
+            Some("password".to_string()),
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let mut bytes = fs::read(&archive_file).unwrap();
+        let memory_offset = MAGIC_HEADER.len() + FORMAT_MARKER.len() + 2;
+        bytes[memory_offset..memory_offset + 4]
+            .copy_from_slice(&(MAX_ARCHIVE_ARGON2_MEMORY_KIB + 1).to_le_bytes());
+        fs::write(&archive_file, bytes).unwrap();
+
+        let error = extract_archive_impl(
+            None,
+            archive_file.to_string_lossy().to_string(),
+            output_dir.to_string_lossy().to_string(),
+            Some("password".to_string()),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("支持范围"));
+        assert!(!output_dir.join("secret").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinks_are_archived_without_following() {
+        let root = temp_case_dir("symlink");
+        let input_dir = root.join("input");
+        let target_file = input_dir.join("real.txt");
+        let alias_file = input_dir.join("alias.txt");
+        let archive_file = root.join("links.krate");
+        let output_dir = root.join("output");
+
+        write_text_file(&target_file, "symlink payload");
+        fs::create_dir_all(&input_dir).unwrap();
+        symlink(Path::new("real.txt"), &alias_file).unwrap();
+
+        create_archive_impl(
+            None,
+            vec![input_dir.to_string_lossy().to_string()],
+            archive_file.to_string_lossy().to_string(),
+            None,
+            Some(1),
+        )
+        .await
+        .unwrap();
+
+        let extracted_dir = PathBuf::from(
+            extract_archive_impl(
+                None,
+                archive_file.to_string_lossy().to_string(),
+                output_dir.to_string_lossy().to_string(),
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+        let extracted_alias = extracted_dir.join("input").join("alias.txt");
+
+        assert!(fs::symlink_metadata(&extracted_alias)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            fs::read_link(&extracted_alias).unwrap(),
+            PathBuf::from("real.txt")
+        );
+        assert_eq!(
+            fs::read_to_string(&extracted_alias).unwrap(),
+            "symlink payload"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

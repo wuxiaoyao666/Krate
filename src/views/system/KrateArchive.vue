@@ -42,14 +42,14 @@ const archivePath = ref('')
 const extractDir = ref('')
 const unpackPassword = ref('')
 
-const normalizedPackPassword = computed(() => packPassword.value.trim())
-const normalizedUnpackPassword = computed(() => unpackPassword.value.trim())
+const normalizedPackPassword = computed(() => (packPassword.value === '' ? null : packPassword.value))
+const normalizedUnpackPassword = computed(() => (unpackPassword.value === '' ? null : unpackPassword.value))
 const canPack = computed(() => selectedFiles.value.length > 0)
 const canUnpack = computed(() => !!archivePath.value && !!extractDir.value)
 const progressPercent = computed(() => Math.round(progress.value))
 
 const levelOptions = [
-  { label: '平衡（推荐）', value: 6 },
+  { label: '平衡', value: 6 },
   { label: '最高压缩', value: 9 },
   { label: '最快速度', value: 1 },
 ]
@@ -115,7 +115,7 @@ const handlePack = async () => {
     await invoke('create_archive', {
       inputs: selectedFiles.value,
       outputPath: savePath,
-      password: normalizedPackPassword.value || null,
+      password: normalizedPackPassword.value,
       gzipLevel: compressionLevel.value,
     })
 
@@ -154,14 +154,14 @@ const handleUnpack = async () => {
     progressCurrentPath.value = ''
     loadingText.value = normalizedUnpackPassword.value ? '正在校验密码并解压' : '正在解压归档'
 
-    await invoke('extract_archive', {
+    const extractedDir = await invoke<string>('extract_archive', {
       archivePath: archivePath.value,
       outputDir: extractDir.value,
-      password: normalizedUnpackPassword.value || null,
+      password: normalizedUnpackPassword.value,
     })
 
-    lastExtractedDir.value = extractDir.value
-    message.success('解压成功')
+    lastExtractedDir.value = extractedDir
+    message.success('解压成功，已创建新的输出文件夹')
   } catch (error: any) {
     message.error('解压失败: ' + (error?.message || error))
   } finally {
@@ -261,13 +261,13 @@ onBeforeUnmount(() => {
               size="small"
               type="password"
               show-password-on="click"
-              placeholder="留空则只压缩打包，不启用加密"
+              placeholder="留空只压缩，不加密"
             />
           </div>
         </div>
 
         <div class="mb-3 rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
-          设置密码后，归档会在压缩完成后启用基于密码的分块加密；留空时只做压缩打包，速度更快。
+          设置密码后，归档会在压缩完成后启用基于密码的分块加密；密码会按原样参与加密，前后空格也算内容。
         </div>
 
         <div
@@ -324,11 +324,11 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="space-y-2">
-            <div class="text-xs text-slate-400">解压位置</div>
+            <div class="text-xs text-slate-400">输出位置</div>
             <NInput
               v-model:value="extractDir"
               size="small"
-              placeholder="默认解压到同级目录"
+              placeholder="默认在归档同级目录创建新文件夹"
               readonly
               @click="selectExtractDir"
             >
@@ -336,6 +336,7 @@ onBeforeUnmount(() => {
                 <NIcon><FolderOpen /></NIcon>
               </template>
             </NInput>
+            <div class="text-[11px] text-slate-500">恢复时会在这里创建新的输出文件夹，不直接覆盖当前目录内容。</div>
           </div>
 
           <div class="space-y-2">
