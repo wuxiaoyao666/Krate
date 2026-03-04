@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { openPath } from '@tauri-apps/plugin-opener'
 import {
   NButton,
   NCard,
@@ -90,7 +89,7 @@ const openExtractedDir = async () => {
   if (!lastExtractedDir.value) return
 
   try {
-    await openPath(lastExtractedDir.value)
+    await invoke('open_output_dir', { path: lastExtractedDir.value })
   } catch (error: any) {
     message.error('打开输出目录失败: ' + (error?.message || error))
   }

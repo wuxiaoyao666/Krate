@@ -1,4 +1,4 @@
-use crate::commands::archive::{create_archive, extract_archive};
+use crate::commands::archive::{create_archive, extract_archive, open_output_dir};
 use crate::commands::image::{get_image_info, resize_image};
 use crate::commands::network::{kill_process, scan_ports};
 use crate::commands::pdf::{decrypt_pdf, encrypt_pdf};
@@ -84,6 +84,7 @@ pub fn run() {
             kill_process,
             create_archive,
             extract_archive,
+            open_output_dir,
             encrypt_pdf,
             decrypt_pdf,
             get_system_info,

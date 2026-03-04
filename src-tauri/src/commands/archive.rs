@@ -11,6 +11,7 @@ use flate2::write::GzEncoder;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::{Emitter, Window, command};
 
 const MAGIC_HEADER: &[u8; 9] = b"KRATE_PKG";
@@ -843,6 +844,46 @@ pub async fn extract_archive(
     password: Option<String>,
 ) -> Result<(), String> {
     extract_archive_impl(Some(&window), archive_path, output_dir, password).await
+}
+
+#[command]
+pub async fn open_output_dir(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+
+    if !target.exists() {
+        return Err("输出目录不存在".to_string());
+    }
+
+    if !target.is_dir() {
+        return Err("目标路径不是文件夹".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut cmd = Command::new("explorer");
+        cmd.arg(target);
+        cmd
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut cmd = Command::new("open");
+        cmd.arg(target);
+        cmd
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(target);
+        cmd
+    };
+
+    command
+        .spawn()
+        .map_err(|err| format!("打开输出目录失败: {}", err))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
