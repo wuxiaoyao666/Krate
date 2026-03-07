@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import * as Diff from 'diff'
+import type { Change } from 'diff'
 import { NInput, NButton, NTag, NScrollbar } from 'naive-ui'
 import { Clean, Compare } from '@vicons/carbon'
 import { NIcon } from 'naive-ui'
@@ -57,7 +58,7 @@ const intraline = (oldLine: string, newLine: string) => {
   const left: Seg[] = []
   const right: Seg[] = []
 
-  for (const p of parts as any[]) {
+  for (const p of parts) {
     if (p.added) {
       right.push({
         text: p.value,
@@ -85,7 +86,7 @@ const diffRows = computed<DiffRow[]>(() => {
   // 空内容直接返回空，避免显示一堆“空行 diff”
   if (!oldText.value && !newText.value) return []
 
-  const parts = Diff.diffLines(a, b) as any[]
+  const parts: Change[] = Diff.diffLines(a, b)
 
   const rows: DiffRow[] = []
   let oldNo = 1

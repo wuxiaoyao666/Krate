@@ -2,10 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": [
-    "main",
-    "pomodoro-mini"
-  ],
+  "windows": ["main", "pomodoro-mini"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -22,8 +19,6 @@
     "core:window:allow-monitor-from-point",
     "core:window:allow-primary-monitor",
     "notification:default",
-    "opener:default",
-    "opener:allow-open-path",
     "dialog:default",
     "fs:allow-app-read-recursive",
     "fs:allow-app-write-recursive",

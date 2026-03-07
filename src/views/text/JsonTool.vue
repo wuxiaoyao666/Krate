@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { NInput, NButton, useMessage, NIcon, NSelect } from 'naive-ui'
+import type { SelectOption } from 'naive-ui'
 import { Copy, Clean, Code, CenterToFit } from '@vicons/carbon'
 
 const message = useMessage()
+type IndentValue = 2 | 4 | '\t'
 
 // 状态
 const inputContent = ref('')
 const outputContent = ref('')
-const indentSize = ref<number | string>(2) // 默认 2 空格缩进
+const indentSize = ref<IndentValue>(2) // 默认 2 空格缩进
 const errorMsg = ref('')
 
 // 缩进选项
-const indentOptions: Array<{ label: string; value: number | string }> = [
+const indentOptions: SelectOption[] = [
   { label: '2 空格缩进', value: 2 },
   { label: '4 空格缩进', value: 4 },
   { label: 'Tab 缩进', value: '\t' },
@@ -32,11 +34,10 @@ const formatJSON = () => {
 
   try {
     const obj = JSON.parse(inputContent.value)
-    // @ts-ignore
     outputContent.value = JSON.stringify(obj, null, indentSize.value)
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err)
-    errorMsg.value = `格式错误: ${err.message}`
+    errorMsg.value = `格式错误: ${err instanceof Error ? err.message : String(err)}`
     outputContent.value = ''
   }
 }
@@ -49,8 +50,8 @@ const minifyJSON = () => {
   try {
     const obj = JSON.parse(inputContent.value)
     outputContent.value = JSON.stringify(obj)
-  } catch (err: any) {
-    errorMsg.value = `格式错误: ${err.message}`
+  } catch (err: unknown) {
+    errorMsg.value = `格式错误: ${err instanceof Error ? err.message : String(err)}`
   }
 }
 
@@ -101,7 +102,7 @@ const fillExample = () => {
       class="bg-[#0F172A]/40 p-3 rounded-xl border border-slate-700/50 flex flex-wrap gap-4 items-center justify-between"
     >
       <div class="w-40">
-        <n-select size="small" v-model:value="indentSize" :options="indentOptions as any" />
+        <n-select size="small" v-model:value="indentSize" :options="indentOptions" />
       </div>
 
       <div class="flex space-x-3">

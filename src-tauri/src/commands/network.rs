@@ -26,7 +26,7 @@ pub fn scan_ports() -> Result<Vec<PortInfo>, String> {
 
         // 执行 tasklist /FO CSV /NH
         let tasklist_output = Command::new("tasklist")
-            .args(&["/FO", "CSV", "/NH"])
+            .args(["/FO", "CSV", "/NH"])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .ok(); // 这里使用 ok() 忽略错误，如果获取失败就只显示 PID
@@ -51,7 +51,7 @@ pub fn scan_ports() -> Result<Vec<PortInfo>, String> {
 
         // --- 2: 执行 netstat -ano 获取端口信息 ---
         let output = Command::new("netstat")
-            .args(&["-ano"])
+            .args(["-ano"])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| e.to_string())?;
@@ -88,7 +88,7 @@ pub fn scan_ports() -> Result<Vec<PortInfo>, String> {
     {
         // 执行 lsof -i -P -n -sTCP:LISTEN
         let output = Command::new("lsof")
-            .args(&["-iTCP", "-sTCP:LISTEN", "-P", "-n"])
+            .args(["-iTCP", "-sTCP:LISTEN", "-P", "-n"])
             .output()
             .map_err(|e| e.to_string())?;
 
@@ -104,7 +104,7 @@ pub fn scan_ports() -> Result<Vec<PortInfo>, String> {
                 let pid = parts[1];
                 let address_part = parts[8]; // *:8080
 
-                if let Some(port_str) = address_part.split(':').last() {
+                if let Some(port_str) = address_part.split(':').next_back() {
                     let port = port_str.to_string();
                     ports.push(PortInfo {
                         pid: pid.to_string(),
@@ -132,7 +132,7 @@ pub fn kill_process(pid: String) -> Result<String, String> {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         let output = Command::new("taskkill")
-            .args(&["/F", "/PID", &pid])
+            .args(["/F", "/PID", &pid])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| e.to_string())?;
@@ -147,7 +147,7 @@ pub fn kill_process(pid: String) -> Result<String, String> {
     #[cfg(not(target_os = "windows"))]
     {
         let output = Command::new("kill")
-            .args(&["-9", &pid])
+            .args(["-9", &pid])
             .output()
             .map_err(|e| e.to_string())?;
 

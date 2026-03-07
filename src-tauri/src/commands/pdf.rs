@@ -53,8 +53,8 @@ pub fn decrypt_pdf(input: String, output: String, password: String) -> Result<()
         return Err("密码不能为空".to_string());
     }
 
-    let mut document =
-        Document::load_with_password(&input, &password).map_err(|err| format!("读取或解密 PDF 失败: {}", err))?;
+    let mut document = Document::load_with_password(&input, &password)
+        .map_err(|err| format!("读取或解密 PDF 失败: {}", err))?;
 
     // load_with_password 会在读取阶段直接完成解密:
     // - was_encrypted=false: 原文件本就未加密

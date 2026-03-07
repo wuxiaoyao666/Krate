@@ -436,7 +436,7 @@ impl<R: Read> EncryptedPayloadReader<R> {
         self.inner.read_exact(&mut len_bytes)?;
         let chunk_len = u32::from_le_bytes(len_bytes) as usize;
 
-        if chunk_len < AEAD_TAG_LEN || chunk_len > CHUNK_PLAINTEXT_SIZE + AEAD_TAG_LEN {
+        if !(AEAD_TAG_LEN..=CHUNK_PLAINTEXT_SIZE + AEAD_TAG_LEN).contains(&chunk_len) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "encrypted archive chunk length is invalid",

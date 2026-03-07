@@ -80,7 +80,7 @@ function spawnRandomTile() {
     c: pos.c,
     val,
     isNew: true,
-    isMerged: false
+    isMerged: false,
   })
 }
 
@@ -186,7 +186,7 @@ async function move(dir: Dir) {
     best: bestScore.value,
     gameOver: gameOver.value,
     won: won.value,
-    keepPlaying: keepPlaying.value
+    keepPlaying: keepPlaying.value,
   } satisfies Snapshot
 
   for (let line = 0; line < GRID_SIZE; line++) {
@@ -275,7 +275,7 @@ function onKeydown(e: KeyboardEvent) {
     arrowup: 'up',
     w: 'up',
     arrowdown: 'down',
-    s: 'down'
+    s: 'down',
   }
   const dir = map[k]
   if (!dir) return
@@ -319,7 +319,7 @@ function bgCellStyle(idx: number) {
     width: `${CELL}px`,
     height: `${CELL}px`,
     left: `${GAP + c * (CELL + GAP)}px`,
-    top: `${GAP + r * (CELL + GAP)}px`
+    top: `${GAP + r * (CELL + GAP)}px`,
   }
 }
 
@@ -331,7 +331,7 @@ function tileStyle(t: Tile) {
     height: `${CELL}px`,
     transform: `translate(${x}px, ${y}px)`,
     transitionDuration: `${ANIM_MS}ms`,
-    zIndex: t.isMerged || t.isNew ? 20 : 10
+    zIndex: t.isMerged || t.isNew ? 20 : 10,
   }
 }
 
@@ -380,7 +380,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown as any)
+  window.removeEventListener('keydown', onKeydown)
   boardRef.value?.removeEventListener('pointerdown', onPointerDown)
   boardRef.value?.removeEventListener('pointerup', onPointerUp)
   boardRef.value?.removeEventListener('pointercancel', onPointerUp)
@@ -394,7 +394,9 @@ onBeforeUnmount(() => {
       <div class="flex items-end justify-between gap-4">
         <div>
           <div class="text-5xl font-extrabold text-[#776e65] leading-none">2048</div>
-          <div class="text-sm text-slate-500 mt-2">合并数字，冲击 2048（支持 WASD / 方向键 / 滑动）</div>
+          <div class="text-sm text-slate-500 mt-2">
+            合并数字，冲击 2048（支持 WASD / 方向键 / 滑动）
+          </div>
         </div>
 
         <div class="flex gap-2">
@@ -419,14 +421,25 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="flex gap-2">
-          <NButton size="small" secondary :disabled="history.length === 0 || isMoving" @click="undo">
+          <NButton
+            size="small"
+            secondary
+            :disabled="history.length === 0 || isMoving"
+            @click="undo"
+          >
             <template #icon>
               <NIcon :component="Undo" />
             </template>
             撤销
           </NButton>
 
-          <NButton size="small" type="primary" color="#8f7a66" :disabled="isMoving" @click="initGame">
+          <NButton
+            size="small"
+            type="primary"
+            color="#8f7a66"
+            :disabled="isMoving"
+            @click="initGame"
+          >
             <template #icon>
               <NIcon :component="Restart" />
             </template>
@@ -454,7 +467,11 @@ onBeforeUnmount(() => {
           v-for="t in tiles"
           :key="t.id"
           class="absolute top-0 left-0 rounded-lg flex items-center justify-center font-extrabold shadow-md will-change-transform transition-transform ease-in-out"
-          :class="[tileColorClass(t.val), tileTextClass(t.val), { 'tile-new': t.isNew, 'tile-merged': t.isMerged }]"
+          :class="[
+            tileColorClass(t.val),
+            tileTextClass(t.val),
+            { 'tile-new': t.isNew, 'tile-merged': t.isMerged },
+          ]"
           :style="tileStyle(t)"
         >
           {{ t.val }}

@@ -16,31 +16,28 @@
     "@tauri-apps/plugin-dialog": "~2.6.0",
     "@tauri-apps/plugin-fs": "~2.4.5",
     "@tauri-apps/plugin-notification": "~2.3.3",
-    "@tauri-apps/plugin-opener": "^2.5.3",
     "bcryptjs": "^3.0.3",
     "browser-image-compression": "^2.0.2",
     "crypto-js": "^4.2.0",
     "diff": "^8.0.3",
     "qrcode": "^1.5.4",
-    "vue": "^3.5.27",
+    "vue": "^3.5.29",
     "vue-cropper": "^1.1.4",
-    "vue-router": "^4.6.4"
+    "vue-router": "^5.0.3"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2.10.0",
-    "@types/bcryptjs": "^3.0.0",
+    "@tailwindcss/vite": "^4.2.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/crypto-js": "^4.2.2",
-    "@types/diff": "^8.0.0",
-    "@types/node": "^25.2.0",
+    "@types/node": "^25.3.5",
     "@types/qrcode": "^1.5.6",
     "@vicons/carbon": "^0.13.0",
-    "@vitejs/plugin-vue": "^5.2.4",
+    "@vitejs/plugin-vue": "^6.0.4",
     "naive-ui": "^2.43.2",
     "prettier": "3.8.1",
-    "tailwindcss": "^4.1.18",
-    "typescript": "~5.6.3",
-    "vite": "^6.4.1",
-    "vue-tsc": "^2.2.12"
+    "tailwindcss": "^4.2.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vue-tsc": "^3.2.5"
   }
 }

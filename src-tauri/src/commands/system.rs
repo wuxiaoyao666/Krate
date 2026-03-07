@@ -69,9 +69,9 @@ pub fn get_system_info(state: State<SystemState>) -> SystemInfo {
 
     // 收集系统静态信息
     let os_name = System::name().unwrap_or_else(|| "Unknown".to_string());
-    let os_version = System::os_version().unwrap_or_else(|| "".to_string());
+    let os_version = System::os_version().unwrap_or_default();
     let host_name = System::host_name().unwrap_or_else(|| "Localhost".to_string());
-    let kernel_version = System::kernel_version().unwrap_or_else(|| "".to_string());
+    let kernel_version = System::kernel_version().unwrap_or_default();
 
     let physical_cores = System::physical_core_count().unwrap_or(cpus.len());
 

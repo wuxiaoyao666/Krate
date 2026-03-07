@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { NMenu } from 'naive-ui'
-import { useRouter, useRoute } from 'vue-router'
+import { NMenu, type MenuOption } from 'naive-ui'
+import { useRouter, useRoute, type RouteRecordRaw } from 'vue-router'
 import { routes } from '@/router/routes.ts'
 
 const router = useRouter()
 const route = useRoute()
 
 // 递归函数：把 Vue Router 的 routes 转换成 Naive UI 的 menuOptions
-const transformRoutesToMenu = (routes: any[]) => {
+const transformRoutesToMenu = (routes: RouteRecordRaw[]): MenuOption[] => {
   return routes
     .filter((item) => !item.meta?.hidden) // 过滤掉不需要显示的路由
     .map((item) => {
-      const menuItem: any = {
-        label: item.meta?.title || item.name,
-        key: item.name,
+      const key = typeof item.name === 'string' ? item.name : item.path
+      const menuItem: MenuOption = {
+        label: item.meta?.title || key,
+        key,
         icon: item.meta?.icon,
       }
 
@@ -29,7 +30,7 @@ const transformRoutesToMenu = (routes: any[]) => {
 const menuOptions = transformRoutesToMenu(routes)
 
 // 选中项：直接计算属性绑定当前路由 name
-const activeKey = computed(() => route.name as string)
+const activeKey = computed(() => (typeof route.name === 'string' ? route.name : route.path))
 
 // 展开项：控制哪些父菜单是打开的
 const expandedKeys = ref<string[]>([])
@@ -40,10 +41,10 @@ watch(
   () => route.matched,
   (matched) => {
     // 获取当前路由路径上需要展开的所有 key
-    const currentRouteKeys = matched.map((m) => m.name as string)
+    const currentRouteKeys = matched.map((m) => (typeof m.name === 'string' ? m.name : m.path))
 
     // 遍历这些 key，如果它不在 expandedKeys 里，就把它加进去
-    currentRouteKeys.forEach(key => {
+    currentRouteKeys.forEach((key) => {
       if (!expandedKeys.value.includes(key)) {
         expandedKeys.value.push(key)
       }
@@ -83,7 +84,9 @@ const handleUpdateExpandedKeys = (keys: string[]) => {
     </div>
 
     <div class="p-4 border-t border-slate-800/50 shrink-0 bg-[#0F172A]">
-      <div class="flex flex-col items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity">
+      <div
+        class="flex flex-col items-center gap-1.5 opacity-60 hover:opacity-100 transition-opacity"
+      >
         <div class="text-[10px] text-slate-500 font-mono">v1.0.0 Dev</div>
         <div class="text-[11px] text-slate-400 flex items-center gap-1">
           <span>Designed by</span>
@@ -93,4 +96,3 @@ const handleUpdateExpandedKeys = (keys: string[]) => {
     </div>
   </div>
 </template>
-

@@ -34,13 +34,14 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| match event {
+                .on_tray_icon_event(|tray, event| {
                     // 处理托盘图标本身的点击 左键切换显示/隐藏
-                    TrayIconEvent::Click {
+                    if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
                         ..
-                    } => {
+                    } = event
+                    {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
@@ -51,7 +52,6 @@ pub fn run() {
                             }
                         }
                     }
-                    _ => {}
                 })
                 .build(app)?;
 
@@ -72,7 +72,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(SystemState::new()) // 系统信息
