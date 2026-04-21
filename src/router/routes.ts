@@ -280,7 +280,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'games',
     component: () => import('@/views/games/GameHall.vue'),
     meta: {
-      title: '游戏',
+      title: '摸鱼',
       icon: renderIcon(GameConsole),
     },
   },
@@ -320,6 +320,17 @@ export const routes: RouteRecordRaw[] = [
       title: '逻辑放牛',
       hidden: true,
       standalone: true,
+    },
+  },
+  {
+    path: '/game/landlord',
+    name: 'game-landlord',
+    component: () => import('@/views/games/Landlord.vue'),
+    meta: {
+      title: '局域网斗地主',
+      hidden: true,
+      standalone: true,
+      desc: '支持局域网联机的经典斗地主',
     },
   },
   {

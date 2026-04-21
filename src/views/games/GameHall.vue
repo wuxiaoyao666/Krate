@@ -2,7 +2,7 @@
 import { emitTo } from '@tauri-apps/api/event'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { NGrid, NGi, NCard, NButton, NIcon, useMessage } from 'naive-ui'
-import { Flash, PlayFilled, TableSplit, GameConsole, Grid } from '@vicons/carbon'
+import { Flash, PlayFilled, TableSplit, GameConsole, Grid, Events } from '@vicons/carbon'
 import { COW_PUZZLE_REFRESH_EVENT } from './cowPuzzleEngine'
 
 const message = useMessage()
@@ -48,6 +48,16 @@ const games = [
     width: 1160,
     height: 840,
   },
+  {
+    id: 'landlord',
+    title: '局域网斗地主',
+    desc: '创建房间，局域网联机，欢乐斗地主！',
+    icon: Events,
+    color: 'text-yellow-400',
+    route: '/game/landlord',
+    width: 1280,
+    height: 800,
+  },
 ]
 
 const openGameWindow = async (game: any) => {
@@ -82,7 +92,7 @@ const openGameWindow = async (game: any) => {
 <template>
   <div class="p-8 max-w-6xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-slate-100 mb-2">🎮 游戏大厅</h1>
+      <h1 class="text-3xl font-bold text-slate-100 mb-2">🎮 摸鱼</h1>
       <p class="text-slate-400">点击下方游戏，将在独立窗口启动。</p>
     </div>
 
